@@ -65,7 +65,7 @@ def _resolve_pass(
             changed = changed or sub_changed
             warnings.extend(sub_warnings)
         elif isinstance(value, list):
-            new_list = []
+            new_list: list[Any] = []
             for item in value:
                 if isinstance(item, str):
                     resolved, item_changed = resolve_single_value(item, root_config)

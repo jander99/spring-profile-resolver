@@ -1,0 +1,9 @@
+spring:
+  profiles:
+    group:
+      a: b
+      b: c
+      c: a  # Circular reference back to 'a'
+
+server:
+  port: 8080

@@ -2,16 +2,16 @@
 
 from typing import Any
 
+from .exceptions import CircularProfileGroupError
 from .models import ConfigDocument
 
-
-class CircularProfileGroupError(Exception):
-    """Raised when circular profile group references are detected."""
-
-    def __init__(self, cycle_path: list[str]) -> None:
-        self.cycle_path = cycle_path
-        cycle_str = " -> ".join(cycle_path)
-        super().__init__(f"Circular profile group reference detected: {cycle_str}")
+# Re-export for backwards compatibility
+__all__ = [
+    "CircularProfileGroupError",
+    "parse_profile_groups",
+    "expand_profiles",
+    "get_applicable_documents",
+]
 
 
 def parse_profile_groups(config: dict[str, Any]) -> dict[str, list[str]]:
