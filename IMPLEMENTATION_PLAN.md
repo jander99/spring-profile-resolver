@@ -49,13 +49,7 @@ Define typed data classes for configuration handling:
 class ConfigSource:
     """Tracks where a configuration value originated."""
     file_path: Path
-    line_number: int | None = None
-
-@dataclass
-class TrackedValue:
-    """A configuration value with its source information."""
-    value: Any
-    source: ConfigSource
+    line_number: int | None = None  # Note: Requires ruamel.yaml node inspection
 
 @dataclass
 class ConfigDocument:
@@ -64,6 +58,8 @@ class ConfigDocument:
     activation_profile: str | None  # from spring.config.activate.on-profile
     source_file: Path
 ```
+
+**Note on line numbers**: Capturing exact line numbers requires deep integration with ruamel.yaml's node API. This should be implemented in Phase 6 (Polish) after verifying feasibility. Initial implementation can use `line_number: None`.
 
 ### 2. `parser.py` - YAML Parsing
 
@@ -106,6 +102,14 @@ server:
   port: 80
 ```
 
+**Supported activation conditions:**
+- `spring.config.activate.on-profile: <profile-name>` - Standard profile activation
+
+**Limitations (initial release):**
+- `spring.config.activate.on-cloud-platform` - NOT supported (document as future enhancement)
+- Environment variable substitution at parse time - NOT supported (only property placeholders)
+- External config locations (`spring.config.location`, `spring.config.import`) - NOT supported
+
 ### 3. `profiles.py` - Profile Resolution
 
 **Responsibilities:**
@@ -122,7 +126,17 @@ def expand_profiles(
     requested: list[str],
     groups: dict[str, list[str]]
 ) -> list[str]:
-    """Expand profile list, resolving groups recursively."""
+    """
+    Expand profile list, resolving groups recursively.
+
+    Algorithm (matches Spring Boot 2.4+):
+    1. Process profiles in the order specified
+    2. For each profile, if it's a group, expand it depth-first
+    3. Maintain insertion order, avoiding duplicates
+    4. Detect circular references and raise error
+
+    Returns expanded list maintaining proper precedence order.
+    """
 
 def get_applicable_documents(
     documents: list[ConfigDocument],
@@ -136,11 +150,19 @@ def get_applicable_documents(
 spring:
   profiles:
     group:
-      prod: proddb, prodmq
-      proddb: postgres, hikari
+      prod: proddb,prodmq
+      proddb: postgres,hikari
 ```
 
-With `--profiles prod`, expands to: `[prod, proddb, prodmq, postgres, hikari]`
+With `--profiles prod`, the expansion works as follows:
+1. Start with `[prod]`
+2. `prod` is a group → expand to `[proddb, prodmq]`
+3. `proddb` is also a group → expand to `[postgres, hikari]`
+4. Final result: `[prod, proddb, postgres, hikari, prodmq]`
+
+**Important**: Spring Boot processes groups depth-first. The profile itself is included first, followed by its group members. Members are processed in declaration order.
+
+**Circular reference handling**: If `prod → proddb → prod` is detected, raise an error immediately. Track the expansion path to detect cycles.
 
 ### 4. `merger.py` - Configuration Merging
 
@@ -292,13 +314,14 @@ def resolve_profiles(
     Main entry point for profile resolution.
 
     Steps:
-    1. Discover config files
-    2. Parse all YAML documents
-    3. Extract and expand profile groups
-    4. Filter applicable documents
-    5. Merge in order
-    6. Resolve placeholders
-    7. Return result with warnings
+    1. Discover config files in main resources
+    2. If include_test=True, also discover test resources
+    3. Parse all YAML documents
+    4. Extract and expand profile groups from base config
+    5. Filter applicable documents based on active profiles
+    6. Merge in order (main first, then test overrides)
+    7. Resolve placeholders
+    8. Return result with warnings
     """
 
 @dataclass
@@ -307,6 +330,23 @@ class ResolverResult:
     sources: dict[str, ConfigSource]
     warnings: list[str]
 ```
+
+**Test Resource Handling:**
+
+Test resources (`src/test/resources/application*.yml`) are handled based on the `include_test` parameter:
+
+- **`include_test=True` (default via CLI)**: Test resources are processed AFTER main resources, allowing test configurations to override production settings. This is useful for understanding what configuration a test would see.
+
+- **`include_test=False` (via `--no-test` flag)**: Only main resources are processed. This represents the production configuration without test overrides.
+
+**Use cases:**
+- Include test resources when debugging test failures or understanding test behavior
+- Exclude test resources when verifying production configuration
+
+**Discovery paths:**
+- Main: `{project}/src/main/resources/application*.yml`
+- Test: `{project}/src/test/resources/application*.yml` (if `include_test=True`)
+- Custom: Additional paths via `--resources` flag
 
 ### 8. `cli.py` - Command Line Interface
 
@@ -334,27 +374,43 @@ def main(
 
 ## Resolution Order (Critical)
 
-The order of config application follows Spring Boot's rules:
+The order of config application follows Spring Boot 2.4+ rules:
 
-1. **Base config**: `application.yml` (all documents without activation condition)
+1. **Base config**: `application.yml` (all documents - unconditional + matching profile conditions)
 2. **Profile-specific files**: For each profile in order:
-   - `application-{profile}.yml`
-   - Documents from `application.yml` with matching `on-profile`
-3. **Test resources**: Same pattern, applied last (overrides main)
+   - `application-{profile}.yml` (all documents within the file)
+3. **Test resources** (if enabled): Same pattern as above, applied last (overrides main)
+
+**IMPORTANT**: Each file is processed as a complete unit. All documents within a file (including those with `on-profile` conditions) are evaluated when that file is loaded. Files are not interleaved.
 
 **Example with `--profiles prod,aws`:**
 ```
-1. src/main/resources/application.yml (base documents)
+Main resources:
+1. src/main/resources/application.yml
+   - Processes ALL documents in order:
+     a. Base documents (no activation condition)
+     b. Documents with spring.config.activate.on-profile: prod
+     c. Documents with spring.config.activate.on-profile: aws
+   - Only includes documents matching active profiles or with no condition
+
 2. src/main/resources/application-prod.yml
-3. src/main/resources/application.yml (on-profile: prod documents)
-4. src/main/resources/application-aws.yml
-5. src/main/resources/application.yml (on-profile: aws documents)
-6. src/test/resources/application.yml (base documents)
-7. src/test/resources/application-prod.yml
-8. src/test/resources/application.yml (on-profile: prod documents)
-9. src/test/resources/application-aws.yml
-10. src/test/resources/application.yml (on-profile: aws documents)
+   - Processes ALL documents in this file
+
+3. src/main/resources/application-aws.yml
+   - Processes ALL documents in this file
+
+Test resources (only when --no-test is NOT specified):
+4. src/test/resources/application.yml
+   - Same multi-document processing as main application.yml
+
+5. src/test/resources/application-prod.yml
+   - All documents in test prod override
+
+6. src/test/resources/application-aws.yml
+   - All documents in test aws override
 ```
+
+**Key principle**: Later files and later documents within the same file override earlier ones for the same configuration keys.
 
 ---
 
@@ -422,6 +478,16 @@ Placeholder resolution:
 Test override scenario:
 - `src/main/resources/application*.yml`
 - `src/test/resources/application*.yml`
+
+### `test-fixtures/edge-cases/`
+Edge case scenarios:
+- **`circular-groups/`**: Circular profile group references (e.g., `prod → proddb → prod`)
+- **`invalid-yaml/`**: Malformed YAML files to test error handling
+- **`empty-files/`**: Empty application files and empty documents
+- **`missing-profiles/`**: Requested profiles with no corresponding files
+- **`unicode/`**: Configuration with Unicode characters, emoji, multi-byte strings
+- **`deep-nesting/`**: Very deeply nested configuration structures
+- **`yaml-features/`**: YAML anchors, aliases, and custom tags
 
 ---
 
