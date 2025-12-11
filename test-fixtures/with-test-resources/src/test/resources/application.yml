@@ -1,0 +1,4 @@
+# Test overrides for all profiles
+database:
+  host: test-db.local
+  port: 5433
