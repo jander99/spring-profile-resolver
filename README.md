@@ -45,6 +45,9 @@ spring-profile-resolver --profiles prod /path/to/spring-project
 # Multiple profiles (applied in order, later wins)
 spring-profile-resolver --profiles prod,aws,postgres /path/to/spring-project
 
+# Include test resource overrides (for debugging test behavior)
+spring-profile-resolver --profiles dev --include-test /path/to/spring-project
+
 # Custom resource directories
 spring-profile-resolver --profiles dev --resources src/main/resources,config/ .
 
@@ -81,7 +84,7 @@ Following Spring Boot's precedence rules:
 1. `application.yml` (base configuration)
 2. `application-{profile}.yml` for each profile in specified order
 3. Multi-document sections matching active profiles
-4. Test resources (when applicable, applied last)
+4. Test resources (only with `--include-test`, applied last as overrides)
 
 Later sources override earlier ones for the same keys.
 
