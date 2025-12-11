@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: groups-app
+  profiles:
+    group:
+      prod: proddb,prodmq
+      proddb: postgres,hikari
+
+server:
+  port: 8080
