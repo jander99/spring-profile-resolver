@@ -1,4 +1,4 @@
-"""YAML parsing for Spring Boot configuration files."""
+"""Configuration file parsing for Spring Boot (YAML and Properties)."""
 
 from pathlib import Path
 from typing import Any
@@ -13,6 +13,34 @@ def create_yaml_parser() -> YAML:
     yaml = YAML()
     yaml.preserve_quotes = True
     return yaml
+
+
+def parse_config_file(path: Path) -> list[ConfigDocument]:
+    """Parse a configuration file (YAML or Properties).
+
+    Automatically detects file type by extension and uses
+    the appropriate parser.
+
+    Args:
+        path: Path to the configuration file
+
+    Returns:
+        List of ConfigDocument objects
+
+    Raises:
+        FileNotFoundError: If the file doesn't exist
+        ValueError: If the file type is not supported
+    """
+    suffix = path.suffix.lower()
+
+    if suffix in (".yml", ".yaml"):
+        return parse_yaml_file(path)
+    elif suffix == ".properties":
+        from .properties_parser import parse_properties_file
+
+        return parse_properties_file(path)
+    else:
+        raise ValueError(f"Unsupported configuration file type: {suffix}")
 
 
 def parse_yaml_file(path: Path) -> list[ConfigDocument]:
@@ -85,28 +113,35 @@ def extract_activation_profile(doc: dict[str, Any]) -> str | None:
 
 
 def discover_config_files(base_dir: Path) -> list[Path]:
-    """Find all application*.yml and application*.yaml files in a directory.
+    """Find all application config files (YAML and Properties) in a directory.
 
     Args:
         base_dir: Directory to search in
 
     Returns:
         List of paths to config files, sorted for consistent ordering.
-        Base application.yml/yaml comes first, followed by profile-specific files.
+        Base application.yml/yaml/properties comes first, followed by
+        profile-specific files. Within the same profile, .properties
+        files override .yml/.yaml files (Spring Boot behavior).
     """
     if not base_dir.exists():
         return []
 
     yml_files = list(base_dir.glob("application*.yml"))
     yaml_files = list(base_dir.glob("application*.yaml"))
-    all_files = yml_files + yaml_files
+    properties_files = list(base_dir.glob("application*.properties"))
+    all_files = yml_files + yaml_files + properties_files
 
     # Sort with base config first, then alphabetically by profile name
-    def sort_key(path: Path) -> tuple[int, str]:
+    # Within same profile, .properties comes after .yml/.yaml (higher precedence)
+    def sort_key(path: Path) -> tuple[int, str, int]:
         name = path.stem  # e.g., "application" or "application-prod"
+        # .properties files have higher precedence (come later in merge order)
+        extension_order = 1 if path.suffix == ".properties" else 0
+
         if name == "application":
-            return (0, "")  # Base config comes first
-        return (1, name)
+            return (0, "", extension_order)  # Base config comes first
+        return (1, name, extension_order)
 
     return sorted(all_files, key=sort_key)
 

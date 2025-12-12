@@ -10,15 +10,24 @@ PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}:]+)(?::([^}]*))?\}")
 def resolve_placeholders(
     config: dict[str, Any],
     max_iterations: int = 10,
+    env_vars: dict[str, str] | None = None,
+    use_system_env: bool = True,
 ) -> tuple[dict[str, Any], list[str]]:
     """Resolve all ${...} placeholders in config values.
 
     Iterates to handle chained references where one placeholder
     resolves to a value containing another placeholder.
 
+    Resolution order (highest precedence first):
+    1. Environment variables (env_vars parameter)
+    2. System environment variables (if use_system_env=True)
+    3. Config values
+
     Args:
         config: Configuration dictionary to process
         max_iterations: Maximum resolution iterations (prevents infinite loops)
+        env_vars: Optional dict of environment variables for resolution
+        use_system_env: Whether to also check system env vars (os.environ)
 
     Returns:
         Tuple of (resolved_config, warnings) where warnings contains
@@ -28,7 +37,9 @@ def resolve_placeholders(
     warnings: list[str] = []
 
     for _ in range(max_iterations):
-        result, changed, new_warnings = _resolve_pass(result, result)
+        result, changed, new_warnings = _resolve_pass(
+            result, result, env_vars=env_vars, use_system_env=use_system_env
+        )
         warnings.extend(new_warnings)
         if not changed:
             break
@@ -44,12 +55,16 @@ def resolve_placeholders(
 def _resolve_pass(
     config: dict[str, Any],
     root_config: dict[str, Any],
+    env_vars: dict[str, str] | None = None,
+    use_system_env: bool = True,
 ) -> tuple[dict[str, Any], bool, list[str]]:
     """Single pass of placeholder resolution.
 
     Args:
         config: Current config section being processed
         root_config: Full config for value lookups
+        env_vars: Optional dict of environment variables
+        use_system_env: Whether to check system env vars
 
     Returns:
         Tuple of (processed_config, changed, warnings)
@@ -60,7 +75,9 @@ def _resolve_pass(
 
     for key, value in config.items():
         if isinstance(value, dict):
-            new_value, sub_changed, sub_warnings = _resolve_pass(value, root_config)
+            new_value, sub_changed, sub_warnings = _resolve_pass(
+                value, root_config, env_vars=env_vars, use_system_env=use_system_env
+            )
             result[key] = new_value
             changed = changed or sub_changed
             warnings.extend(sub_warnings)
@@ -68,12 +85,14 @@ def _resolve_pass(
             new_list: list[Any] = []
             for item in value:
                 if isinstance(item, str):
-                    resolved, item_changed = resolve_single_value(item, root_config)
+                    resolved, item_changed = resolve_single_value(
+                        item, root_config, env_vars=env_vars, use_system_env=use_system_env
+                    )
                     new_list.append(resolved)
                     changed = changed or item_changed
                 elif isinstance(item, dict):
                     resolved_dict, sub_changed, sub_warnings = _resolve_pass(
-                        item, root_config
+                        item, root_config, env_vars=env_vars, use_system_env=use_system_env
                     )
                     new_list.append(resolved_dict)
                     changed = changed or sub_changed
@@ -82,7 +101,9 @@ def _resolve_pass(
                     new_list.append(item)
             result[key] = new_list
         elif isinstance(value, str):
-            resolved, value_changed = resolve_single_value(value, root_config)
+            resolved, value_changed = resolve_single_value(
+                value, root_config, env_vars=env_vars, use_system_env=use_system_env
+            )
             result[key] = resolved
             changed = changed or value_changed
         else:
@@ -94,12 +115,21 @@ def _resolve_pass(
 def resolve_single_value(
     value: str,
     config: dict[str, Any],
+    env_vars: dict[str, str] | None = None,
+    use_system_env: bool = True,
 ) -> tuple[str, bool]:
     """Resolve placeholders in a single string value.
+
+    Resolution order (highest precedence first):
+    1. Environment variables (env_vars parameter)
+    2. System environment variables (if use_system_env=True)
+    3. Config values
 
     Args:
         value: String potentially containing ${...} placeholders
         config: Configuration to look up values from
+        env_vars: Optional dict of environment variables
+        use_system_env: Whether to check system env vars
 
     Returns:
         Tuple of (resolved_value, changed) where changed indicates
@@ -115,21 +145,45 @@ def resolve_single_value(
         key_path = match.group(1)
         default_value = match.group(2)  # May be None
 
-        resolved = get_nested_value(config, key_path)
+        # Try env vars first (highest precedence)
+        env_value = _get_env_value(key_path, env_vars, use_system_env)
+        if env_value is not None:
+            changed = True
+            return env_value
 
+        # Try config values
+        resolved = get_nested_value(config, key_path)
         if resolved is not None:
             changed = True
-            # Convert to string if not already
             return str(resolved)
-        elif default_value is not None:
+
+        # Use default if provided
+        if default_value is not None:
             changed = True
             return default_value
-        else:
-            # Leave unresolved placeholder as-is
-            return match.group(0)
+
+        # Leave unresolved placeholder as-is
+        return match.group(0)
 
     result = PLACEHOLDER_PATTERN.sub(replace_match, value)
     return result, changed
+
+
+def _get_env_value(
+    key_path: str,
+    env_vars: dict[str, str] | None,
+    use_system_env: bool,
+) -> str | None:
+    """Get value from environment variables.
+
+    Converts property path to env var name and checks both
+    provided env_vars and system environment.
+    """
+    import os
+
+    from .env_vars import get_env_value
+
+    return get_env_value(key_path, env_vars or {}, system_env=use_system_env)
 
 
 def get_nested_value(config: dict[str, Any], key_path: str) -> Any | None:

@@ -18,8 +18,12 @@ This tool parses all relevant `application*.yml` files and produces a single com
 - **Multi-profile support**: Accepts comma-separated list of profiles (e.g., `prod,aws,postgres`)
 - **Spring Boot 2.4+ compatible**: Supports `spring.config.activate.on-profile` syntax
 - **Profile groups**: Resolves `spring.profiles.group.*` definitions
+- **Profile expressions**: Supports `!`, `&`, `|` operators (e.g., `prod & cloud`, `!staging`)
 - **Property placeholders**: Expands `${property.name}` and `${property:default}` references
 - **Multi-document YAML**: Handles `---` separated documents within files
+- **Properties file support**: Handles `.properties` files in addition to YAML
+- **Config imports**: Supports `spring.config.import` directive
+- **Environment variables**: Env vars can override placeholders via `--env-file` or `--env`
 - **Source tracking**: Comments show which file provided each configuration value
 - **Test resource support**: Properly handles test resource overrides
 
@@ -56,6 +60,15 @@ spring-profile-resolver --profiles prod --stdout /path/to/project
 
 # Specify output directory
 spring-profile-resolver --profiles prod --output ./my-output /path/to/project
+
+# Use environment variables for placeholder resolution
+spring-profile-resolver --profiles prod --env-file .env.prod /path/to/project
+
+# Override specific environment variables
+spring-profile-resolver --profiles prod --env DATABASE_HOST=prod-db --env DATABASE_PORT=5432 /path/to/project
+
+# Disable system environment variable lookup
+spring-profile-resolver --profiles prod --no-system-env /path/to/project
 ```
 
 ## Output
@@ -189,28 +202,33 @@ This tool implements the **config data file** portion of Spring Boot's configura
 | Feature | Supported | Notes |
 |---------|-----------|-------|
 | Base `application.yml` | ✅ | |
-| Profile-specific `application-{profile}.yml` | ✅ | |
+| Base `application.properties` | ✅ | Full .properties format support |
+| Profile-specific files | ✅ | Both `.yml` and `.properties` |
 | Multi-document YAML (`---` separator) | ✅ | |
-| `spring.config.activate.on-profile` | ✅ | Simple profile names only |
+| Multi-document properties (`#---`) | ✅ | |
+| `spring.config.activate.on-profile` | ✅ | Full expression support |
+| Profile expressions (`prod & cloud`) | ✅ | `!`, `&`, `\|`, parentheses |
 | Profile groups | ✅ | With circular reference detection |
 | Property placeholders (`${name}`) | ✅ | |
 | Default values (`${name:default}`) | ✅ | |
+| Environment variables | ✅ | Via `--env-file` and `--env` |
+| `spring.config.import` | ✅ | `file:`, `classpath:`, `optional:` |
 | Test resources override | ✅ | With `--include-test` flag |
 | Last-wins merge strategy | ✅ | |
 | External config files | ❌ | Focuses on source files only |
-| Environment variables as sources | ❌ | Pre-deployment analysis tool |
-| Profile expressions (`prod & cloud`) | ❌ | Only simple profile names |
-| `.properties` file format | ❌ | YAML only |
-| `spring.config.import` | ❌ | |
 
 ### Resolution Order in This Tool
 
 Following Spring Boot's precedence rules for packaged config files:
 
-1. `application.yml` (base configuration, no activation condition)
-2. Multi-document sections in `application.yml` matching active profiles
-3. `application-{profile}.yml` for each profile in specified order
-4. Test resources (only with `--include-test`, applied last as overrides)
+1. `application.yml` (base YAML configuration)
+2. `application.properties` (base properties, overrides YAML)
+3. Imported files via `spring.config.import`
+4. Multi-document sections matching active profiles
+5. `application-{profile}.yml` for each profile in specified order
+6. `application-{profile}.properties` for each profile (overrides YAML)
+7. Test resources (only with `--include-test`, applied last as overrides)
+8. Environment variables (highest precedence for placeholders)
 
 Later sources override earlier ones for the same keys.
 

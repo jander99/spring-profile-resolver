@@ -36,6 +36,14 @@ class ProfileResolutionError(SpringProfileResolverError):
     pass
 
 
+class ProfileExpressionError(ProfileResolutionError):
+    """Raised when a profile expression is invalid."""
+
+    def __init__(self, message: str) -> None:
+        self.message = message
+        super().__init__(f"Invalid profile expression: {message}")
+
+
 class CircularProfileGroupError(ProfileResolutionError):
     """Raised when circular profile group references are detected."""
 
