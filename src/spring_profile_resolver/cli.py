@@ -7,6 +7,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 
+from .env_vars import load_env_file, parse_env_overrides
 from .resolver import run_resolver
 
 app = typer.Typer(
@@ -70,6 +71,32 @@ def main(
             help="Include test resources (they override main)",
         ),
     ] = False,
+    env_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--env-file",
+            "-e",
+            help="Path to .env file for placeholder resolution",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    env: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--env",
+            "-E",
+            help="Environment variable override (KEY=value), can be repeated",
+        ),
+    ] = None,
+    no_system_env: Annotated[
+        bool,
+        typer.Option(
+            "--no-system-env",
+            help="Don't use system environment variables for placeholder resolution",
+        ),
+    ] = False,
 ) -> None:
     """Compute effective Spring Boot configuration for given profiles."""
     # Parse profiles
@@ -84,6 +111,18 @@ def main(
     if resources:
         resource_dirs = [r.strip() for r in resources.split(",") if r.strip()]
 
+    # Load environment variables
+    env_vars: dict[str, str] = {}
+    if env_file:
+        try:
+            env_vars.update(load_env_file(env_file))
+        except Exception as e:
+            error_console.print(f"[red]Error loading env file:[/red] {e}")
+            raise typer.Exit(1) from e
+
+    if env:
+        env_vars.update(parse_env_overrides(env))
+
     try:
         output_yaml, warnings = run_resolver(
             project_path=project_path,
@@ -92,6 +131,8 @@ def main(
             include_test=include_test,
             output_dir=output,
             to_stdout=stdout,
+            env_vars=env_vars if env_vars else None,
+            use_system_env=not no_system_env,
         )
 
         # Display warnings

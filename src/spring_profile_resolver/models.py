@@ -2,7 +2,10 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from .expressions import ProfileExpr
 
 
 @dataclass
@@ -26,17 +29,39 @@ class ConfigDocument:
     source_file: Path
     activation_profile: str | None = None
     document_index: int = 0  # Index within the source file (for multi-doc YAML)
+    _parsed_expression: "ProfileExpr | None" = field(
+        default=None, init=False, repr=False, compare=False
+    )
 
     def matches_profiles(self, active_profiles: list[str]) -> bool:
         """Check if this document applies to the given active profiles.
 
         A document matches if:
         - It has no activation condition (always applies), OR
-        - Its activation_profile is in the active_profiles list
+        - Its activation_profile expression evaluates to true
+
+        Supports Spring Boot profile expressions:
+        - Simple names: "prod"
+        - NOT: "!prod"
+        - AND: "prod & cloud"
+        - OR: "prod | dev"
+        - Parentheses: "(prod & cloud) | dev"
         """
         if self.activation_profile is None:
             return True
-        return self.activation_profile in active_profiles
+
+        # Import here to avoid circular imports
+        from .expressions import (
+            evaluate_profile_expression,
+            is_simple_profile,
+        )
+
+        # Fast path for simple profile names (most common case)
+        if is_simple_profile(self.activation_profile):
+            return self.activation_profile in active_profiles
+
+        # Full expression evaluation
+        return evaluate_profile_expression(self.activation_profile, active_profiles)
 
 
 @dataclass
