@@ -161,11 +161,13 @@ class TestResolvePlaceholders:
     def test_unresolved_warning(self) -> None:
         """Test that unresolved placeholders generate warnings."""
         config = {"url": "http://${missing.host}:8080"}
-        result, warnings = resolve_placeholders(config)
+        result, warnings = resolve_placeholders(config, use_system_env=False)
 
         assert result["url"] == "http://${missing.host}:8080"
-        assert len(warnings) == 1
-        assert "missing.host" in warnings[0]
+        # Should have warning about unresolved placeholder (and possibly no-default warning)
+        unresolved_warnings = [w for w in warnings if "Unresolved placeholder" in w]
+        assert len(unresolved_warnings) == 1
+        assert "missing.host" in unresolved_warnings[0]
 
     def test_default_values(self) -> None:
         """Test placeholders with default values."""
@@ -233,3 +235,139 @@ class TestResolvePlaceholders:
         assert result["services"][0]["url"] == "http://api.example.com/users"
         assert result["services"][1]["url"] == "http://api.example.com/orders"
         assert len(warnings) == 0
+
+
+class TestPlaceholderWithoutDefaultWarnings:
+    """Tests for warnings about placeholders without defaults."""
+
+    def test_warning_for_placeholder_without_default_no_config_reference(self) -> None:
+        """Test that placeholder without default generates warning when not in config."""
+        config = {
+            "database": {
+                "url": "${DATABASE_URL}"
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should have warning about placeholder without default
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 1
+        assert "DATABASE_URL" in no_default_warnings[0]
+
+    def test_no_warning_for_placeholder_with_default(self) -> None:
+        """Test that placeholder with default does not generate warning."""
+        config = {
+            "database": {
+                "url": "${DATABASE_URL:jdbc:postgresql://localhost/mydb}"
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should NOT have warning about placeholder without default
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 0
+
+    def test_no_warning_for_placeholder_referencing_existing_config(self) -> None:
+        """Test that placeholder referencing existing config does not generate warning."""
+        config = {
+            "database": {
+                "host": "localhost",
+                "port": 5432,
+                "url": "jdbc:postgresql://${database.host}:${database.port}/mydb"
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should NOT have warning about placeholder without default
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 0
+
+    def test_no_warning_when_env_var_provided(self) -> None:
+        """Test that placeholder without default doesn't warn if env var is provided."""
+        config = {
+            "database": {
+                "url": "${DATABASE_URL}"
+            }
+        }
+        env_vars = {"DATABASE_URL": "jdbc:postgresql://prod-db/mydb"}
+
+        result, warnings = resolve_placeholders(config, env_vars=env_vars, use_system_env=False)
+
+        # Should NOT have warning about placeholder without default
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 0
+
+    def test_warning_for_nested_placeholder_without_default(self) -> None:
+        """Test warning for placeholder without default in nested config."""
+        config = {
+            "app": {
+                "services": {
+                    "external": {
+                        "api": {
+                            "key": "${EXTERNAL_API_KEY}"
+                        }
+                    }
+                }
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 1
+        assert "EXTERNAL_API_KEY" in no_default_warnings[0]
+
+    def test_warning_for_placeholder_in_list(self) -> None:
+        """Test warning for placeholder without default in list."""
+        config = {
+            "servers": ["${SERVER_1}", "${SERVER_2}"]
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 2
+
+    def test_multiple_warnings_for_multiple_placeholders(self) -> None:
+        """Test that multiple placeholders without defaults generate multiple warnings."""
+        config = {
+            "database": {
+                "host": "${DB_HOST}",
+                "port": "${DB_PORT}",
+                "password": "${DB_PASSWORD}"
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 3
+
+    def test_warning_message_content(self) -> None:
+        """Test that warning message contains helpful information."""
+        config = {
+            "api": {
+                "key": "${MISSING_KEY}"
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 1
+
+        warning = no_default_warnings[0]
+        # Should mention the path
+        assert "api.key" in warning
+        # Should mention the placeholder
+        assert "MISSING_KEY" in warning
+        # Should mention it needs env var
+        assert "environment variable" in warning.lower()
+
+    def test_empty_default_counts_as_default(self) -> None:
+        """Test that empty default (${VAR:}) does not generate warning."""
+        config = {
+            "optional": {
+                "value": "${OPTIONAL_VALUE:}"
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        no_default_warnings = [w for w in warnings if "without default" in w]
+        assert len(no_default_warnings) == 0

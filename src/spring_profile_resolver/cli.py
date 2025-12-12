@@ -97,6 +97,33 @@ def main(
             help="Don't use system environment variables for placeholder resolution",
         ),
     ] = False,
+    vcap_services_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--vcap-services-file",
+            help="Path to JSON file containing VCAP_SERVICES (Cloud Foundry)",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    vcap_application_file: Annotated[
+        Path | None,
+        typer.Option(
+            "--vcap-application-file",
+            help="Path to JSON file containing VCAP_APPLICATION (Cloud Foundry)",
+            exists=True,
+            file_okay=True,
+            dir_okay=False,
+        ),
+    ] = None,
+    ignore_vcap: Annotated[
+        bool,
+        typer.Option(
+            "--ignore-vcap",
+            help="Suppress warnings about VCAP_SERVICES/VCAP_APPLICATION not being available",
+        ),
+    ] = False,
 ) -> None:
     """Compute effective Spring Boot configuration for given profiles."""
     # Parse profiles
@@ -123,6 +150,24 @@ def main(
     if env:
         env_vars.update(parse_env_overrides(env))
 
+    # Load VCAP files if provided
+    vcap_services_json: str | None = None
+    vcap_application_json: str | None = None
+
+    if vcap_services_file:
+        try:
+            vcap_services_json = vcap_services_file.read_text(encoding="utf-8")
+        except Exception as e:
+            error_console.print(f"[red]Error loading VCAP_SERVICES file:[/red] {e}")
+            raise typer.Exit(1) from e
+
+    if vcap_application_file:
+        try:
+            vcap_application_json = vcap_application_file.read_text(encoding="utf-8")
+        except Exception as e:
+            error_console.print(f"[red]Error loading VCAP_APPLICATION file:[/red] {e}")
+            raise typer.Exit(1) from e
+
     try:
         output_yaml, warnings = run_resolver(
             project_path=project_path,
@@ -133,6 +178,9 @@ def main(
             to_stdout=stdout,
             env_vars=env_vars if env_vars else None,
             use_system_env=not no_system_env,
+            vcap_services_json=vcap_services_json,
+            vcap_application_json=vcap_application_json,
+            ignore_vcap_warnings=ignore_vcap,
         )
 
         # Display warnings
