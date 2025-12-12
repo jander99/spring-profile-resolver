@@ -40,9 +40,9 @@ dev = [
 spring-profile-resolver = "spring_profile_resolver.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/your-org/spring-profile-resolver"
-Repository = "https://github.com/your-org/spring-profile-resolver"
-Issues = "https://github.com/your-org/spring-profile-resolver/issues"
+Homepage = "https://github.com/jander99/spring-profile-resolver"
+Repository = "https://github.com/jander99/spring-profile-resolver"
+Issues = "https://github.com/jander99/spring-profile-resolver/issues"
 
 [build-system]
 requires = ["hatchling"]

@@ -97,17 +97,29 @@ Later sources override earlier ones for the same keys.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/spring-profile-resolver.git
+git clone https://github.com/jander99/spring-profile-resolver.git
 cd spring-profile-resolver
 
-# Install dependencies
-uv sync
+# Install dependencies (including dev tools)
+uv sync --extra dev
 
 # Run tests
 uv run pytest
 
+# Run tests with coverage
+uv run pytest --cov=spring_profile_resolver
+
+# Run linter
+uv run ruff check src tests
+
+# Run formatter check
+uv run ruff format --check src tests
+
+# Run type checker
+uv run mypy src
+
 # Run the tool locally
-uv run spring-profile-resolver --profiles dev ./test-fixtures
+uv run spring-profile-resolver --profiles dev --resources . ./test-fixtures/simple
 ```
 
 ## License
