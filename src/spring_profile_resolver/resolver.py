@@ -2,6 +2,7 @@
 
 from pathlib import Path
 
+from .exceptions import InvalidYAMLError
 from .imports import load_imports
 from .merger import merge_configs
 from .models import ConfigDocument, ResolverResult
@@ -51,9 +52,10 @@ def resolve_profiles(
         ignore_vcap_warnings: Whether to suppress VCAP availability warnings
 
     Returns:
-        ResolverResult with merged config, sources, and warnings
+        ResolverResult with merged config, sources, warnings, and errors
     """
     warnings: list[str] = []
+    errors: list[str] = []
     all_documents: list[ConfigDocument] = []
 
     # Determine resource directories to scan
@@ -78,11 +80,14 @@ def resolve_profiles(
                     loaded_files.add(base_file)
 
                     # Process imports from this file
-                    import_docs, import_warnings = _process_imports(
+                    import_docs, import_warnings, import_errors = _process_imports(
                         documents, base_file, main_dirs, loaded_files
                     )
                     all_documents.extend(import_docs)
                     warnings.extend(import_warnings)
+                    errors.extend(import_errors)
+                except InvalidYAMLError as e:
+                    errors.append(str(e))
                 except Exception as e:
                     warnings.append(f"Error parsing {base_file}: {e}")
         elif resource_dir == main_dirs[0]:
@@ -107,6 +112,8 @@ def resolve_profiles(
                     try:
                         documents = parse_config_file(profile_file)
                         all_documents.extend(documents)
+                    except InvalidYAMLError as e:
+                        errors.append(str(e))
                     except Exception as e:
                         warnings.append(f"Error parsing {profile_file}: {e}")
 
@@ -118,6 +125,8 @@ def resolve_profiles(
             try:
                 documents = parse_config_file(base_file)
                 all_documents.extend(documents)
+            except InvalidYAMLError as e:
+                errors.append(str(e))
             except Exception as e:
                 warnings.append(f"Error parsing {base_file}: {e}")
 
@@ -129,6 +138,8 @@ def resolve_profiles(
                     try:
                         documents = parse_config_file(profile_file)
                         all_documents.extend(documents)
+                    except InvalidYAMLError as e:
+                        errors.append(str(e))
                     except Exception as e:
                         warnings.append(f"Error parsing {profile_file}: {e}")
 
@@ -156,6 +167,7 @@ def resolve_profiles(
         config=resolved_config,
         sources=sources,
         warnings=warnings,
+        errors=errors,
     )
 
 
@@ -180,7 +192,7 @@ def _process_imports(
     source_file: Path,
     resource_dirs: list[Path],
     loaded_files: set[Path],
-) -> tuple[list[ConfigDocument], list[str]]:
+) -> tuple[list[ConfigDocument], list[str], list[str]]:
     """Process spring.config.import directives from documents.
 
     Args:
@@ -190,10 +202,11 @@ def _process_imports(
         loaded_files: Set of already loaded files (modified in place)
 
     Returns:
-        Tuple of (imported_documents, warnings)
+        Tuple of (imported_documents, warnings, errors)
     """
     imported_docs: list[ConfigDocument] = []
     warnings: list[str] = []
+    errors: list[str] = []
 
     for doc in documents:
         if doc.activation_profile is not None:
@@ -220,12 +233,15 @@ def _process_imports(
                     imported_docs.extend(new_docs)
 
                     # Recursively process imports from this file
-                    nested_docs, nested_warnings = _process_imports(
+                    nested_docs, nested_warnings, nested_errors = _process_imports(
                         new_docs, import_path, resource_dirs, loaded_files
                     )
                     imported_docs.extend(nested_docs)
                     warnings.extend(nested_warnings)
+                    errors.extend(nested_errors)
 
+                except InvalidYAMLError as e:
+                    errors.append(str(e))
                 except Exception as e:
                     if not optional:
                         warnings.append(f"Error loading imported file {import_path}: {e}")
@@ -233,7 +249,7 @@ def _process_imports(
         except Exception as e:
             warnings.append(f"Error processing imports from {source_file}: {e}")
 
-    return imported_docs, warnings
+    return imported_docs, warnings, errors
 
 
 def _find_base_configs(resource_dir: Path) -> list[Path]:
@@ -327,7 +343,7 @@ def run_resolver(
     vcap_services_json: str | None = None,
     vcap_application_json: str | None = None,
     ignore_vcap_warnings: bool = False,
-) -> tuple[str, list[str]]:
+) -> tuple[str, list[str], list[str]]:
     """Run the full resolver pipeline and generate output.
 
     Args:
@@ -344,7 +360,7 @@ def run_resolver(
         ignore_vcap_warnings: Whether to suppress VCAP availability warnings
 
     Returns:
-        Tuple of (output_yaml, warnings)
+        Tuple of (output_yaml, warnings, errors)
     """
     result = resolve_profiles(
         project_path=project_path,
@@ -374,4 +390,4 @@ def run_resolver(
         to_stdout=to_stdout,
     )
 
-    return output_yaml, result.warnings
+    return output_yaml, result.warnings, result.errors

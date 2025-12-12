@@ -3,9 +3,8 @@
 from pathlib import Path
 
 import pytest
-from ruamel.yaml import YAMLError
 
-from spring_profile_resolver.exceptions import CircularProfileGroupError
+from spring_profile_resolver.exceptions import CircularProfileGroupError, InvalidYAMLError
 from spring_profile_resolver.parser import parse_yaml_file
 from spring_profile_resolver.profiles import expand_profiles, parse_profile_groups
 from spring_profile_resolver.resolver import resolve_profiles
@@ -49,8 +48,28 @@ class TestInvalidYAML:
 
     def test_invalid_yaml_raises_error(self, edge_cases_dir: Path) -> None:
         """Test that invalid YAML raises an appropriate error."""
-        with pytest.raises(YAMLError):
+        with pytest.raises(InvalidYAMLError) as exc_info:
             parse_yaml_file(edge_cases_dir / "invalid-yaml" / "application.yml")
+
+        # Should include file path and line number info
+        assert "invalid-yaml" in str(exc_info.value.file_path)
+        assert "Invalid YAML syntax" in str(exc_info.value)
+
+    def test_invalid_yaml_collected_as_error_in_resolver(
+        self, edge_cases_dir: Path
+    ) -> None:
+        """Test that invalid YAML errors are collected in resolver result."""
+        result = resolve_profiles(
+            project_path=edge_cases_dir / "invalid-yaml",
+            profiles=["dev"],
+            resource_dirs=["."],
+        )
+
+        # Should have an error about invalid YAML
+        assert len(result.errors) >= 1
+        assert any("Invalid YAML syntax" in e for e in result.errors)
+        # Errors should include file path
+        assert any("application.yml" in e for e in result.errors)
 
 
 class TestEmptyFiles:

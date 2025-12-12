@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
-from ruamel.yaml.comments import CommentedMap
+from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
 from .models import ConfigSource
 
@@ -34,7 +34,7 @@ def generate_computed_yaml(
     # Generate YAML string
     yaml = YAML()
     yaml.default_flow_style = False
-    yaml.indent(mapping=2, sequence=2, offset=2)
+    yaml.indent(mapping=2, sequence=4, offset=2)
 
     stream = StringIO()
     yaml.dump(commented_config, stream)
@@ -84,6 +84,16 @@ def _build_commented_map(
                     key, before=f"From: {section_source}"
                 )
                 last_block_source = section_source
+        elif isinstance(value, list):
+            # Convert list items, recursively handling nested dicts
+            result[key] = _build_commented_seq(value, sources, current_path)
+
+            # Add block comment if source changes
+            if section_source and section_source != last_block_source:
+                result.yaml_set_comment_before_after_key(
+                    key, before=f"From: {section_source}"
+                )
+                last_block_source = section_source
         else:
             result[key] = value
 
@@ -103,6 +113,38 @@ def _build_commented_map(
                         key, before=f"From: {value_source}"
                     )
                     last_block_source = section_source
+
+    return result
+
+
+def _build_commented_seq(
+    items: list[Any],
+    sources: dict[str, ConfigSource],
+    path_prefix: str,
+) -> CommentedSeq:
+    """Build a CommentedSeq, recursively converting nested dicts and lists.
+
+    Args:
+        items: List of values
+        sources: Source tracking map
+        path_prefix: Path prefix for source lookups (e.g., 'authority-mappings')
+
+    Returns:
+        CommentedSeq with properly structured nested content
+    """
+    result = CommentedSeq()
+
+    for idx, item in enumerate(items):
+        item_path = f"{path_prefix}[{idx}]"
+
+        if isinstance(item, dict):
+            # Recursively convert dict to CommentedMap
+            result.append(_build_commented_map(item, sources, item_path))
+        elif isinstance(item, list):
+            # Recursively convert nested list
+            result.append(_build_commented_seq(item, sources, item_path))
+        else:
+            result.append(item)
 
     return result
 

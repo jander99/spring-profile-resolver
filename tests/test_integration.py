@@ -136,7 +136,7 @@ class TestRunResolver:
 
     def test_generates_yaml_output(self, fixtures_dir: Path, tmp_path: Path) -> None:
         """Test that run_resolver generates YAML output."""
-        output_yaml, warnings = run_resolver(
+        output_yaml, warnings, errors = run_resolver(
             project_path=fixtures_dir / "simple",
             profiles=["prod"],
             resource_dirs=[""],
@@ -151,9 +151,12 @@ class TestRunResolver:
         output_file = tmp_path / "application-prod-computed.yml"
         assert output_file.exists()
 
+        # No errors expected
+        assert errors == []
+
     def test_stdout_mode(self, fixtures_dir: Path, capsys: pytest.CaptureFixture) -> None:
         """Test stdout output mode."""
-        output_yaml, warnings = run_resolver(
+        output_yaml, warnings, errors = run_resolver(
             project_path=fixtures_dir / "simple",
             profiles=["dev"],
             resource_dirs=[""],
@@ -162,10 +165,11 @@ class TestRunResolver:
 
         captured = capsys.readouterr()
         assert "port: 8081" in captured.out
+        assert errors == []
 
     def test_multiple_profiles(self, fixtures_dir: Path, tmp_path: Path) -> None:
         """Test with multiple profiles."""
-        output_yaml, warnings = run_resolver(
+        output_yaml, warnings, errors = run_resolver(
             project_path=fixtures_dir / "with-groups",
             profiles=["prod"],
             resource_dirs=[""],
@@ -175,3 +179,4 @@ class TestRunResolver:
         # Filename should reflect profiles
         output_file = tmp_path / "application-prod-computed.yml"
         assert output_file.exists()
+        assert errors == []
