@@ -30,14 +30,15 @@ This tool parses all relevant `application*.yml` files and produces a single com
 ## Installation
 
 ```bash
-# Using uvx (recommended for one-off usage)
-uvx spring-profile-resolver --profiles prod,aws /path/to/project
+# Clone the repository
+git clone https://github.com/jander99/spring-profile-resolver.git
+cd spring-profile-resolver
 
-# Or install globally
-uv tool install spring-profile-resolver
+# Install the tool globally
+uv tool install .
 
-# Or install in a project
-uv add spring-profile-resolver
+# Or install in editable mode for development
+uv pip install -e .
 ```
 
 ## Usage
