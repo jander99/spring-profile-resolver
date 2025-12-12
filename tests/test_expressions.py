@@ -8,7 +8,6 @@ from spring_profile_resolver.expressions import (
     Lexer,
     NotExpr,
     OrExpr,
-    Parser,
     ProfileName,
     Token,
     TokenType,

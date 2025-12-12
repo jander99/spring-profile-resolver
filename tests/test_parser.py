@@ -160,3 +160,58 @@ class TestGetProfileFromFilename:
         """Test extracting profile from full path."""
         path = Path("/some/dir/application-staging.yml")
         assert get_profile_from_filename(path) == "staging"
+
+
+class TestYamlDepthValidation:
+    """Tests for YAML bomb protection via depth validation."""
+
+    def test_normal_depth_accepted(self, tmp_path: Path) -> None:
+        """Test that normal nesting depth is accepted."""
+        yaml_content = """
+server:
+  config:
+    settings:
+      nested:
+        value: "deep but acceptable"
+"""
+        yaml_file = tmp_path / "application.yml"
+        yaml_file.write_text(yaml_content)
+
+        docs = parse_yaml_file(yaml_file)
+        assert len(docs) == 1
+        assert docs[0].content["server"]["config"]["settings"]["nested"]["value"] == "deep but acceptable"
+
+    def test_excessive_depth_rejected(self, tmp_path: Path) -> None:
+        """Test that excessive nesting depth is rejected."""
+        from spring_profile_resolver.exceptions import InvalidYAMLError
+        from spring_profile_resolver.parser import MAX_YAML_DEPTH, _validate_yaml_depth
+
+        # Build a deeply nested structure exceeding max depth
+        deep_data: dict = {}
+        current = deep_data
+        for i in range(MAX_YAML_DEPTH + 5):
+            current[f"level{i}"] = {}
+            current = current[f"level{i}"]
+        current["value"] = "too deep"
+
+        with pytest.raises(InvalidYAMLError) as exc_info:
+            _validate_yaml_depth(deep_data, path=tmp_path / "test.yml")
+
+        assert "nesting depth exceeds maximum" in str(exc_info.value)
+
+    def test_list_depth_counted(self, tmp_path: Path) -> None:
+        """Test that list nesting counts toward depth limit."""
+        from spring_profile_resolver.exceptions import InvalidYAMLError
+        from spring_profile_resolver.parser import MAX_YAML_DEPTH, _validate_yaml_depth
+
+        # Build deeply nested list structure
+        deep_data: list = [[[[[[]]]]]]
+        current = deep_data
+        for _ in range(MAX_YAML_DEPTH + 5):
+            current[0] = [[]]
+            current = current[0]
+
+        with pytest.raises(InvalidYAMLError) as exc_info:
+            _validate_yaml_depth(deep_data, path=tmp_path / "test.yml")
+
+        assert "nesting depth exceeds maximum" in str(exc_info.value)

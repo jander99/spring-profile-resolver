@@ -69,15 +69,19 @@ class TestParseVcapServices:
     """Tests for parse_vcap_services function."""
 
     def test_empty_returns_empty(self):
-        result = parse_vcap_services(None)
+        result, warnings = parse_vcap_services(None)
         assert result == {}
+        assert warnings == []
 
-        result = parse_vcap_services("")
+        result, warnings = parse_vcap_services("")
         assert result == {}
+        assert warnings == []
 
     def test_invalid_json_returns_empty(self):
-        result = parse_vcap_services("not valid json")
+        result, warnings = parse_vcap_services("not valid json")
         assert result == {}
+        assert len(warnings) == 1
+        assert "Invalid VCAP_SERVICES JSON" in warnings[0]
 
     def test_single_service(self):
         vcap_json = json.dumps({
@@ -91,12 +95,13 @@ class TestParseVcapServices:
                 }
             ]
         })
-        result = parse_vcap_services(vcap_json)
+        result, warnings = parse_vcap_services(vcap_json)
 
         assert "vcap" in result
         assert "services" in result["vcap"]
         assert "my-config" in result["vcap"]["services"]
         assert result["vcap"]["services"]["my-config"]["credentials"]["api-key"] == "secret123"
+        assert warnings == []
 
     def test_multiple_services(self):
         vcap_json = json.dumps({
@@ -118,7 +123,7 @@ class TestParseVcapServices:
                 }
             ]
         })
-        result = parse_vcap_services(vcap_json)
+        result, warnings = parse_vcap_services(vcap_json)
 
         assert "config-service" in result["vcap"]["services"]
         assert "my-mysql" in result["vcap"]["services"]
@@ -132,7 +137,7 @@ class TestParseVcapServices:
                 {"name": "db-replica", "credentials": {"host": "replica.db"}}
             ]
         })
-        result = parse_vcap_services(vcap_json)
+        result, warnings = parse_vcap_services(vcap_json)
 
         assert "db-primary" in result["vcap"]["services"]
         assert "db-replica" in result["vcap"]["services"]
@@ -143,27 +148,33 @@ class TestParseVcapServices:
                 {"credentials": {"key": "value"}}  # No "name" field
             ]
         })
-        result = parse_vcap_services(vcap_json)
+        result, warnings = parse_vcap_services(vcap_json)
         assert result == {}
 
     def test_non_dict_value_returns_empty(self):
-        result = parse_vcap_services('"just a string"')
+        result, warnings = parse_vcap_services('"just a string"')
         assert result == {}
+        assert len(warnings) == 1
+        assert "not a JSON object" in warnings[0]
 
 
 class TestParseVcapApplication:
     """Tests for parse_vcap_application function."""
 
     def test_empty_returns_empty(self):
-        result = parse_vcap_application(None)
+        result, warnings = parse_vcap_application(None)
         assert result == {}
+        assert warnings == []
 
-        result = parse_vcap_application("")
+        result, warnings = parse_vcap_application("")
         assert result == {}
+        assert warnings == []
 
     def test_invalid_json_returns_empty(self):
-        result = parse_vcap_application("not valid json")
+        result, warnings = parse_vcap_application("not valid json")
         assert result == {}
+        assert len(warnings) == 1
+        assert "Invalid VCAP_APPLICATION JSON" in warnings[0]
 
     def test_application_metadata(self):
         vcap_json = json.dumps({
@@ -173,39 +184,43 @@ class TestParseVcapApplication:
             "organization_name": "my-org",
             "uris": ["my-app.cfapps.io"]
         })
-        result = parse_vcap_application(vcap_json)
+        result, warnings = parse_vcap_application(vcap_json)
 
         assert "vcap" in result
         assert "application" in result["vcap"]
         assert result["vcap"]["application"]["application_name"] == "my-app"
         assert result["vcap"]["application"]["space_name"] == "development"
         assert result["vcap"]["application"]["uris"] == ["my-app.cfapps.io"]
+        assert warnings == []
 
 
 class TestGetVcapConfig:
     """Tests for get_vcap_config function."""
 
     def test_empty_returns_empty(self):
-        result = get_vcap_config(None, None)
+        result, warnings = get_vcap_config(None, None)
         assert result == {}
+        assert warnings == []
 
     def test_services_only(self):
         services_json = json.dumps({
             "user-provided": [{"name": "my-service", "credentials": {"key": "value"}}]
         })
-        result = get_vcap_config(vcap_services_json=services_json)
+        result, warnings = get_vcap_config(vcap_services_json=services_json)
 
         assert "vcap" in result
         assert "services" in result["vcap"]
         assert "my-service" in result["vcap"]["services"]
+        assert warnings == []
 
     def test_application_only(self):
         app_json = json.dumps({"application_name": "my-app"})
-        result = get_vcap_config(vcap_application_json=app_json)
+        result, warnings = get_vcap_config(vcap_application_json=app_json)
 
         assert "vcap" in result
         assert "application" in result["vcap"]
         assert result["vcap"]["application"]["application_name"] == "my-app"
+        assert warnings == []
 
     def test_both_services_and_application(self):
         services_json = json.dumps({
@@ -213,13 +228,21 @@ class TestGetVcapConfig:
         })
         app_json = json.dumps({"application_name": "my-app"})
 
-        result = get_vcap_config(services_json, app_json)
+        result, warnings = get_vcap_config(services_json, app_json)
 
         assert "vcap" in result
         assert "services" in result["vcap"]
         assert "application" in result["vcap"]
         assert "my-service" in result["vcap"]["services"]
         assert result["vcap"]["application"]["application_name"] == "my-app"
+        assert warnings == []
+
+    def test_invalid_json_returns_warnings(self):
+        result, warnings = get_vcap_config("invalid json", "also invalid")
+        assert result == {}
+        assert len(warnings) == 2
+        assert any("VCAP_SERVICES" in w for w in warnings)
+        assert any("VCAP_APPLICATION" in w for w in warnings)
 
 
 class TestIsVcapAvailable:

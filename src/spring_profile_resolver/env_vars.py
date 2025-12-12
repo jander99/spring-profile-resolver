@@ -86,6 +86,7 @@ def env_var_to_property_path(env_var: str) -> str:
     - SPRING_DATASOURCE_URL -> spring.datasource.url
     - MY_APP_NAME -> my.app.name
     - server_port -> server.port
+    - MY__PROP -> my_prop (double underscore becomes literal underscore)
 
     Args:
         env_var: Environment variable name
@@ -95,14 +96,34 @@ def env_var_to_property_path(env_var: str) -> str:
     """
     # Convert underscores to dots and lowercase
     # Handle double underscores as literal underscores (Spring Boot convention)
-    # First, protect double underscores
-    protected = env_var.replace("__", "\x00")
-    # Convert single underscores to dots
-    dotted = protected.replace("_", ".")
-    # Restore double underscores as single underscores
-    result = dotted.replace("\x00", "_")
-    # Lowercase
-    return result.lower()
+    # Use explicit character-by-character parsing instead of sentinel characters
+    parts: list[str] = []
+    current = ""
+    i = 0
+
+    while i < len(env_var):
+        char = env_var[i]
+        if char == "_":
+            # Check for double underscore
+            if i + 1 < len(env_var) and env_var[i + 1] == "_":
+                # Double underscore -> literal underscore
+                current += "_"
+                i += 2
+            else:
+                # Single underscore -> dot (new segment)
+                if current:
+                    parts.append(current)
+                    current = ""
+                i += 1
+        else:
+            current += char
+            i += 1
+
+    # Don't forget the last segment
+    if current:
+        parts.append(current)
+
+    return ".".join(parts).lower()
 
 
 def property_path_to_env_vars(property_path: str) -> list[str]:
@@ -196,8 +217,37 @@ def _set_nested_value(d: dict[str, Any], path: str, value: Any) -> None:
 
 
 def _convert_value(value: str) -> Any:
-    """Convert a string value to appropriate Python type."""
-    # Boolean conversion
+    """Convert a string value to appropriate Python type.
+
+    This function implements automatic type conversion matching Spring Boot's
+    behavior for environment variable values:
+
+    - Boolean: "true"/"false" (case-insensitive) -> True/False
+    - Integer: Numeric strings without decimal -> int (e.g., "8080" -> 8080)
+    - Float: Numeric strings with decimal -> float (e.g., "3.14" -> 3.14)
+    - String: All other values remain as strings
+
+    This auto-conversion is intentional to match how Spring Boot interprets
+    environment variables, allowing values like SERVER_PORT=8080 to be
+    treated as integers in the resulting configuration.
+
+    Args:
+        value: The string value to convert
+
+    Returns:
+        The value converted to its appropriate Python type (bool, int, float, or str)
+
+    Examples:
+        >>> _convert_value("true")
+        True
+        >>> _convert_value("8080")
+        8080
+        >>> _convert_value("3.14")
+        3.14
+        >>> _convert_value("localhost")
+        'localhost'
+    """
+    # Boolean conversion (case-insensitive)
     if value.lower() == "true":
         return True
     if value.lower() == "false":

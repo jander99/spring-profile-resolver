@@ -3,11 +3,48 @@
 from pathlib import Path
 from typing import Any
 
-from ruamel.yaml import YAML
-from ruamel.yaml import YAMLError
+from ruamel.yaml import YAML, YAMLError
 
 from .exceptions import InvalidYAMLError
 from .models import ConfigDocument
+
+# Maximum nesting depth for YAML documents (protection against YAML bombs)
+MAX_YAML_DEPTH = 50
+
+
+def _validate_yaml_depth(
+    data: Any,
+    max_depth: int = MAX_YAML_DEPTH,
+    current_depth: int = 0,
+    path: Path | None = None,
+) -> None:
+    """Validate that YAML data doesn't exceed maximum nesting depth.
+
+    This protects against YAML bomb attacks that use deeply nested structures
+    to exhaust resources.
+
+    Args:
+        data: The parsed YAML data to validate
+        max_depth: Maximum allowed nesting depth (default: 50)
+        current_depth: Current depth in the traversal (internal)
+        path: File path for error messages (optional)
+
+    Raises:
+        InvalidYAMLError: If the nesting depth exceeds max_depth
+    """
+    if current_depth > max_depth:
+        raise InvalidYAMLError(
+            path or Path("unknown"),
+            details=f"YAML nesting depth exceeds maximum allowed depth of {max_depth}. "
+            f"This may indicate a YAML bomb attack or malformed configuration.",
+        )
+
+    if isinstance(data, dict):
+        for value in data.values():
+            _validate_yaml_depth(value, max_depth, current_depth + 1, path)
+    elif isinstance(data, list):
+        for item in data:
+            _validate_yaml_depth(item, max_depth, current_depth + 1, path)
 
 
 def create_yaml_parser() -> YAML:
@@ -62,7 +99,7 @@ def parse_yaml_file(path: Path) -> list[ConfigDocument]:
     documents: list[ConfigDocument] = []
 
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8") as f:
             for index, doc in enumerate(yaml.load_all(f)):
                 if doc is None:
                     # Skip empty documents
@@ -70,6 +107,10 @@ def parse_yaml_file(path: Path) -> list[ConfigDocument]:
 
                 # Convert ruamel.yaml's CommentedMap to regular dict for easier handling
                 content = dict(doc) if doc else {}
+
+                # Validate depth to protect against YAML bombs
+                _validate_yaml_depth(content, path=path)
+
                 activation_profile = extract_activation_profile(content)
 
                 documents.append(

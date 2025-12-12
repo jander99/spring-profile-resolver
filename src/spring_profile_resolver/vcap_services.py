@@ -65,7 +65,9 @@ def detect_vcap_placeholders(value: str) -> list[str]:
     return vcap_refs
 
 
-def parse_vcap_services(vcap_json: str | None = None) -> dict[str, Any]:
+def parse_vcap_services(
+    vcap_json: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
     """Parse VCAP_SERVICES JSON into a nested configuration dict.
 
     VCAP_SERVICES contains an array of service bindings keyed by service type:
@@ -92,21 +94,25 @@ def parse_vcap_services(vcap_json: str | None = None) -> dict[str, Any]:
                    If None, reads from os.environ.
 
     Returns:
-        Nested dict with vcap.services.{service-name}.* structure
+        Tuple of (nested dict with vcap.services.{service-name}.* structure, warnings)
     """
+    warnings: list[str] = []
+
     if vcap_json is None:
         vcap_json = os.environ.get("VCAP_SERVICES")
 
     if not vcap_json:
-        return {}
+        return {}, warnings
 
     try:
         vcap_data = json.loads(vcap_json)
-    except json.JSONDecodeError:
-        return {}
+    except json.JSONDecodeError as e:
+        warnings.append(f"Invalid VCAP_SERVICES JSON: {e}")
+        return {}, warnings
 
     if not isinstance(vcap_data, dict):
-        return {}
+        warnings.append("VCAP_SERVICES is not a JSON object")
+        return {}, warnings
 
     services: dict[str, Any] = {}
 
@@ -127,10 +133,12 @@ def parse_vcap_services(vcap_json: str | None = None) -> dict[str, Any]:
             # Store the entire service instance data
             services[service_name] = instance
 
-    return {"vcap": {"services": services}} if services else {}
+    return ({"vcap": {"services": services}} if services else {}, warnings)
 
 
-def parse_vcap_application(vcap_json: str | None = None) -> dict[str, Any]:
+def parse_vcap_application(
+    vcap_json: str | None = None,
+) -> tuple[dict[str, Any], list[str]]:
     """Parse VCAP_APPLICATION JSON into a nested configuration dict.
 
     VCAP_APPLICATION contains application metadata:
@@ -150,29 +158,33 @@ def parse_vcap_application(vcap_json: str | None = None) -> dict[str, Any]:
                    If None, reads from os.environ.
 
     Returns:
-        Nested dict with vcap.application.* structure
+        Tuple of (nested dict with vcap.application.* structure, warnings)
     """
+    warnings: list[str] = []
+
     if vcap_json is None:
         vcap_json = os.environ.get("VCAP_APPLICATION")
 
     if not vcap_json:
-        return {}
+        return {}, warnings
 
     try:
         vcap_data = json.loads(vcap_json)
-    except json.JSONDecodeError:
-        return {}
+    except json.JSONDecodeError as e:
+        warnings.append(f"Invalid VCAP_APPLICATION JSON: {e}")
+        return {}, warnings
 
     if not isinstance(vcap_data, dict):
-        return {}
+        warnings.append("VCAP_APPLICATION is not a JSON object")
+        return {}, warnings
 
-    return {"vcap": {"application": vcap_data}} if vcap_data else {}
+    return ({"vcap": {"application": vcap_data}} if vcap_data else {}, warnings)
 
 
 def get_vcap_config(
     vcap_services_json: str | None = None,
     vcap_application_json: str | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], list[str]]:
     """Get combined VCAP configuration from both environment variables.
 
     Args:
@@ -180,14 +192,19 @@ def get_vcap_config(
         vcap_application_json: VCAP_APPLICATION JSON (reads from env if None)
 
     Returns:
-        Combined nested dict with vcap.services.* and vcap.application.*
+        Tuple of (combined nested dict with vcap.services.* and vcap.application.*, warnings)
     """
-    services = parse_vcap_services(vcap_services_json)
-    application = parse_vcap_application(vcap_application_json)
+    warnings: list[str] = []
+
+    services, services_warnings = parse_vcap_services(vcap_services_json)
+    application, app_warnings = parse_vcap_application(vcap_application_json)
+
+    warnings.extend(services_warnings)
+    warnings.extend(app_warnings)
 
     # Merge the two structures
     if not services and not application:
-        return {}
+        return {}, warnings
 
     result: dict[str, Any] = {"vcap": {}}
 
@@ -197,7 +214,7 @@ def get_vcap_config(
     if application:
         result["vcap"]["application"] = application.get("vcap", {}).get("application", {})
 
-    return result
+    return result, warnings
 
 
 def is_vcap_available() -> bool:
