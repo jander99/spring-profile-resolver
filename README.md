@@ -29,6 +29,8 @@ This tool parses all relevant `application*.yml` files and produces a single com
 
 ## Installation
 
+### From PyPI
+
 ```bash
 # Using uvx (recommended for one-off usage)
 uvx spring-profile-resolver --profiles prod,aws /path/to/project
@@ -38,6 +40,20 @@ uv tool install spring-profile-resolver
 
 # Or install in a project
 uv add spring-profile-resolver
+```
+
+### From Source
+
+```bash
+# Clone the repository
+git clone https://github.com/jander99/spring-profile-resolver.git
+cd spring-profile-resolver
+
+# Install the tool globally from source
+uv tool install .
+
+# Or install in editable mode for development
+uv pip install -e .
 ```
 
 ## Usage
