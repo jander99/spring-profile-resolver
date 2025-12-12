@@ -1,0 +1,37 @@
+# Base configuration (no activation condition)
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: multi-doc-app
+
+---
+# Dev profile configuration
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+server:
+  port: 8081
+
+logging:
+  level:
+    root: DEBUG
+
+---
+# Prod profile configuration
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+server:
+  port: 80
+
+logging:
+  level:
+    root: WARN

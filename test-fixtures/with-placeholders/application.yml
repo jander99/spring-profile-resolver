@@ -1,0 +1,18 @@
+database:
+  host: localhost
+  port: 5432
+  name: mydb
+  url: jdbc:postgresql://${database.host}:${database.port}/${database.name}
+
+server:
+  port: 8080
+  base-url: http://localhost:${server.port}
+
+# Placeholder with default value
+cache:
+  host: ${CACHE_HOST:redis.local}
+  port: ${CACHE_PORT:6379}
+
+# Nested reference
+app:
+  database-url: ${database.url}

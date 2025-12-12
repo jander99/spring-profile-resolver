@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: "日本語アプリ"
+    description: "Application with émojis 🚀 and spëcial châräctërs"
+
+messages:
+  greeting: "Привет мир"
+  farewell: "再见"
+  emoji: "Hello 👋 World 🌍"
+
+paths:
+  data: "/données/用户"

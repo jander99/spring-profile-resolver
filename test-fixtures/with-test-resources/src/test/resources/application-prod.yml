@@ -1,0 +1,6 @@
+# Test overrides for prod profile
+server:
+  port: 8080  # Use dev port in tests
+
+database:
+  host: test-prod-db.local

@@ -208,6 +208,37 @@ The sources map would be:
 }
 ```
 
+**Array/List Handling:**
+Per Spring Boot behavior, lists are **replaced entirely**, not merged. Source tracking for lists works as follows:
+
+- The entire list is attributed to a single source (the file that last set it)
+- Individual list items are NOT tracked separately
+- The source key uses the parent path (e.g., `"server.endpoints"` for a list)
+
+Example:
+```yaml
+# application.yml
+server:
+  endpoints:
+    - /health
+    - /info
+
+# application-prod.yml
+server:
+  endpoints:
+    - /health
+    - /metrics
+    - /prometheus
+```
+
+Result with `--profiles prod`:
+```python
+config = {"server": {"endpoints": ["/health", "/metrics", "/prometheus"]}}
+sources = {"server.endpoints": ConfigSource("application-prod.yml")}
+```
+
+The entire list from `application-prod.yml` replaces the one from `application.yml`.
+
 ### 5. `placeholders.py` - Property Placeholder Resolution
 
 **Responsibilities:**
@@ -308,7 +339,7 @@ def resolve_profiles(
     project_path: Path,
     profiles: list[str],
     resource_dirs: list[str] | None = None,
-    include_test: bool = True
+    include_test: bool = False
 ) -> ResolverResult:
     """
     Main entry point for profile resolution.
@@ -319,7 +350,7 @@ def resolve_profiles(
     3. Parse all YAML documents
     4. Extract and expand profile groups from base config
     5. Filter applicable documents based on active profiles
-    6. Merge in order (main first, then test overrides)
+    6. Merge in order (main first, then test overrides if enabled)
     7. Resolve placeholders
     8. Return result with warnings
     """
@@ -335,13 +366,13 @@ class ResolverResult:
 
 Test resources (`src/test/resources/application*.yml`) are handled based on the `include_test` parameter:
 
-- **`include_test=True` (default via CLI)**: Test resources are processed AFTER main resources, allowing test configurations to override production settings. This is useful for understanding what configuration a test would see.
+- **`include_test=False` (default)**: Only main resources are processed. This represents the production configuration without test overrides. This is the most common use case.
 
-- **`include_test=False` (via `--no-test` flag)**: Only main resources are processed. This represents the production configuration without test overrides.
+- **`include_test=True` (via `--include-test` or `-t` flag)**: Test resources are processed AFTER main resources, allowing test configurations to override production settings. This is useful for understanding what configuration a test would see.
 
 **Use cases:**
-- Include test resources when debugging test failures or understanding test behavior
-- Exclude test resources when verifying production configuration
+- Default (exclude test): Verifying production configuration, understanding what runs in deployed environments
+- Include test (`-t`): Debugging test failures, understanding test behavior, validating test overrides
 
 **Discovery paths:**
 - Main: `{project}/src/main/resources/application*.yml`
@@ -365,10 +396,17 @@ def main(
     resources: str | None = typer.Option(None, "--resources", "-r", help="Custom resource dirs"),
     output: Path | None = typer.Option(None, "--output", "-o", help="Output directory"),
     stdout: bool = typer.Option(False, "--stdout", help="Output to stdout"),
-    no_test: bool = typer.Option(False, "--no-test", help="Exclude test resources"),
+    include_test: bool = typer.Option(False, "--include-test", "-t", help="Include test resources (they override main)"),
 ):
     """Compute effective Spring Boot configuration for given profiles."""
 ```
+
+**Default Output Behavior:**
+- If `--stdout` is specified: Output goes to stdout only
+- If `--output` is specified: Write to `{output}/application-{profiles}-computed.yml`
+- Otherwise: Write to `.computed/application-{profiles}-computed.yml` in the current working directory
+
+The `.computed/` directory is created automatically if it doesn't exist. The filename uses the profile list joined by hyphens (e.g., `application-prod-aws-computed.yml` for `--profiles prod,aws`).
 
 ---
 
@@ -399,7 +437,7 @@ Main resources:
 3. src/main/resources/application-aws.yml
    - Processes ALL documents in this file
 
-Test resources (only when --no-test is NOT specified):
+Test resources (only when --include-test is specified):
 4. src/test/resources/application.yml
    - Same multi-document processing as main application.yml
 

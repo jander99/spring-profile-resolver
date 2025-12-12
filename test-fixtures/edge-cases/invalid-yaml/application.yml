@@ -1,0 +1,5 @@
+server:
+  port: 8080
+  # Invalid YAML - bad indentation
+ invalid:
+    key: value

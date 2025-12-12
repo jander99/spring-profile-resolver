@@ -45,6 +45,9 @@ spring-profile-resolver --profiles prod /path/to/spring-project
 # Multiple profiles (applied in order, later wins)
 spring-profile-resolver --profiles prod,aws,postgres /path/to/spring-project
 
+# Include test resource overrides (for debugging test behavior)
+spring-profile-resolver --profiles dev --include-test /path/to/spring-project
+
 # Custom resource directories
 spring-profile-resolver --profiles dev --resources src/main/resources,config/ .
 
@@ -81,7 +84,7 @@ Following Spring Boot's precedence rules:
 1. `application.yml` (base configuration)
 2. `application-{profile}.yml` for each profile in specified order
 3. Multi-document sections matching active profiles
-4. Test resources (when applicable, applied last)
+4. Test resources (only with `--include-test`, applied last as overrides)
 
 Later sources override earlier ones for the same keys.
 
@@ -94,17 +97,29 @@ Later sources override earlier ones for the same keys.
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/spring-profile-resolver.git
+git clone https://github.com/jander99/spring-profile-resolver.git
 cd spring-profile-resolver
 
-# Install dependencies
-uv sync
+# Install dependencies (including dev tools)
+uv sync --extra dev
 
 # Run tests
 uv run pytest
 
+# Run tests with coverage
+uv run pytest --cov=spring_profile_resolver
+
+# Run linter
+uv run ruff check src tests
+
+# Run formatter check
+uv run ruff format --check src tests
+
+# Run type checker
+uv run mypy src
+
 # Run the tool locally
-uv run spring-profile-resolver --profiles dev ./test-fixtures
+uv run spring-profile-resolver --profiles dev --resources . ./test-fixtures/simple
 ```
 
 ## License

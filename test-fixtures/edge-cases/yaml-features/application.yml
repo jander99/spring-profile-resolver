@@ -1,0 +1,27 @@
+# YAML anchors and aliases
+defaults: &defaults
+  adapter: postgres
+  host: localhost
+  port: 5432
+
+development:
+  database:
+    <<: *defaults
+    database: dev_db
+
+production:
+  database:
+    <<: *defaults
+    host: prod-db.example.com
+    database: prod_db
+
+# Multi-line strings
+description: |
+  This is a multi-line
+  string that preserves
+  newlines.
+
+inline-description: >
+  This is a folded string
+  that combines lines
+  into a single line.
