@@ -1,0 +1,42 @@
+# =============================================================================
+# AWS Platform Configuration
+# =============================================================================
+# Use with: SPRING_PROFILES_ACTIVE=aws (or any profile group that includes it)
+#
+# AWS platform settings for running in AWS environment:
+# - S3 for file storage
+# - SES for email notifications
+# - RDS for database
+# - ElastiCache for Redis
+# =============================================================================
+
+orderflow:
+  platform: aws
+
+  storage:
+    type: s3
+    aws:
+      bucket: ${AWS_S3_BUCKET:orderflow-storage}
+      region: ${AWS_REGION:us-east-1}
+      # Credentials typically from IAM role or environment
+      access-key: ${AWS_ACCESS_KEY_ID:}
+      secret-key: ${AWS_SECRET_ACCESS_KEY:}
+
+  notifications:
+    provider: ses
+    email:
+      from: ${AWS_SES_FROM_EMAIL:noreply@orderflow.example}
+
+  cache:
+    redis:
+      host: ${AWS_ELASTICACHE_HOST:localhost}
+      port: ${AWS_ELASTICACHE_PORT:6379}
+
+# AWS RDS settings
+spring:
+  datasource:
+    url: ${AWS_RDS_URL:jdbc:postgresql://localhost:5432/orderflow}
+    username: ${AWS_RDS_USERNAME:orderflow}
+    password: ${AWS_RDS_PASSWORD:orderflow}
+    hikari:
+      connection-timeout: 30000

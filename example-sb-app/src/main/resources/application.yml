@@ -1,0 +1,229 @@
+# =============================================================================
+# OrderFlow Base Configuration
+# =============================================================================
+# This is the base configuration that applies to all environments.
+# Profile-specific files override these values.
+#
+# Available profiles:
+#   Environment: dev, staging, prod
+#   Platform: local, aws, gcp
+#   Database: h2, postgres
+#   Features: metrics, notifications
+#
+# Profile groups are defined below to simplify common combinations.
+# =============================================================================
+
+spring:
+  application:
+    name: orderflow
+
+  # Profile Groups - activate multiple profiles with a single name
+  profiles:
+    group:
+      # Development environment with all dev defaults
+      dev: "h2,local"
+      # Staging environment for testing production-like setup
+      staging: "postgres,aws"
+      # Production environment with full feature set
+      prod: "postgres,aws,metrics,notifications"
+      # Full local development with all features enabled
+      dev-full: "h2,local,metrics,notifications"
+
+  # Default JPA settings
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        format_sql: false
+        use_sql_comments: false
+
+  # Jackson JSON settings
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      indent-output: false
+    default-property-inclusion: non_null
+
+# Server configuration
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    context-path: /
+  error:
+    include-message: always
+    include-binding-errors: always
+
+# Actuator endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+
+# Application-specific configuration
+orderflow:
+  environment: ${ORDERFLOW_ENV:local}
+  platform: local
+
+  orders:
+    default-region: ${ORDERFLOW_DEFAULT_REGION:US}
+    max-items-per-order: 50
+    default-currency: USD
+
+  features:
+    auto-confirm: false
+    metrics-enabled: false
+    audit-logging: false
+    rate-limiting: false
+
+  notifications:
+    enabled: false
+    provider: log
+    email:
+      from: noreply@orderflow.example
+      reply-to: support@orderflow.example
+
+  storage:
+    type: local
+    base-path: ${ORDERFLOW_STORAGE_PATH:/tmp/orderflow}
+    aws:
+      bucket: ""
+      region: us-east-1
+    gcp:
+      bucket: ""
+      project-id: ""
+
+  cache:
+    type: simple
+    ttl-seconds: 300
+    max-size: 1000
+
+# Logging defaults
+logging:
+  level:
+    root: INFO
+    com.example.orderflow: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+
+---
+# =============================================================================
+# H2 Database Profile (in-memory)
+# Activated with: --spring.profiles.active=h2
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: h2
+
+  datasource:
+    url: jdbc:h2:mem:orderflow;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+---
+# =============================================================================
+# PostgreSQL Database Profile
+# Activated with: --spring.profiles.active=postgres
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: postgres
+
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/orderflow}
+    driver-class-name: org.postgresql.Driver
+    username: ${DATABASE_USER:orderflow}
+    password: ${DATABASE_PASSWORD:orderflow}
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:10}
+      minimum-idle: 2
+      idle-timeout: 30000
+      connection-timeout: 20000
+
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+
+---
+# =============================================================================
+# Metrics Feature Profile
+# Activated with: --spring.profiles.active=metrics
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: metrics
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: ${orderflow.environment}
+
+orderflow:
+  features:
+    metrics-enabled: true
+
+---
+# =============================================================================
+# Notifications Feature Profile
+# Activated with: --spring.profiles.active=notifications
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: notifications
+
+orderflow:
+  notifications:
+    enabled: true
+
+---
+# =============================================================================
+# Combined Production Profile Conditions
+# This document only activates when BOTH prod AND aws are active
+# =============================================================================
+spring:
+  config:
+    activate:
+      on-profile: prod & aws
+
+orderflow:
+  features:
+    audit-logging: true
+    rate-limiting: true
+
+logging:
+  level:
+    com.example.orderflow: WARN

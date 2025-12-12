@@ -1,0 +1,27 @@
+# =============================================================================
+# Local Platform Configuration
+# =============================================================================
+# Use with: SPRING_PROFILES_ACTIVE=local (or any profile group that includes it)
+#
+# Local platform settings for running on developer machines:
+# - Local file storage
+# - Console-based notifications
+# - No cloud dependencies
+# =============================================================================
+
+orderflow:
+  platform: local
+
+  storage:
+    type: local
+    base-path: ${ORDERFLOW_STORAGE_PATH:./data/storage}
+
+  notifications:
+    provider: log  # Just log notifications locally
+
+# Ensure H2 console is accessible when running locally
+spring:
+  h2:
+    console:
+      settings:
+        web-allow-others: false

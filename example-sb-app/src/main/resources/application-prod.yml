@@ -1,0 +1,87 @@
+# =============================================================================
+# Production Environment Configuration
+# =============================================================================
+# Use with: SPRING_PROFILES_ACTIVE=prod
+#
+# Production configuration emphasizes:
+# - Security (minimal exposure)
+# - Performance (optimized settings)
+# - Reliability (connection pooling, timeouts)
+# - Observability (structured logging, metrics)
+#
+# The 'prod' profile group automatically includes: postgres, aws, metrics, notifications
+# =============================================================================
+
+orderflow:
+  environment: production
+
+  orders:
+    max-items-per-order: 100
+    default-region: ${ORDERFLOW_DEFAULT_REGION:US}
+
+  features:
+    auto-confirm: false
+    audit-logging: true
+    rate-limiting: true
+
+  notifications:
+    provider: ses
+    email:
+      from: ${NOTIFICATION_EMAIL_FROM:orders@orderflow.com}
+      reply-to: ${NOTIFICATION_EMAIL_REPLY:support@orderflow.com}
+
+  cache:
+    type: redis
+    ttl-seconds: 600  # 10 minutes
+    max-size: 10000
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+
+# Database - production connection pool
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: ${DATABASE_POOL_SIZE:20}
+      minimum-idle: 5
+      idle-timeout: 60000
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      validation-timeout: 5000
+      leak-detection-threshold: 60000
+
+  jpa:
+    properties:
+      hibernate:
+        jdbc:
+          batch_size: 25
+        order_inserts: true
+        order_updates: true
+
+# Server - production hardening
+server:
+  error:
+    include-stacktrace: never
+    include-message: never
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain
+
+# Minimal logging in production
+logging:
+  level:
+    root: WARN
+    com.example.orderflow: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+
+# Actuator - minimal exposure in production
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      show-details: never

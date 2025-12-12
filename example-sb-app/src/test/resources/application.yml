@@ -1,0 +1,70 @@
+# =============================================================================
+# Test Configuration
+# =============================================================================
+# This configuration is used when running tests.
+# It overrides the main application.yml settings for testing purposes.
+# =============================================================================
+
+spring:
+  application:
+    name: orderflow-test
+
+  # Use H2 in-memory database for all tests
+  datasource:
+    url: jdbc:h2:mem:orderflow-test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    database-platform: org.hibernate.dialect.H2Dialect
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+
+  # Disable profile groups in tests
+  profiles:
+    group: {}
+
+# Server on random port for tests
+server:
+  port: 0
+
+# Test-specific orderflow settings
+orderflow:
+  environment: test
+
+  orders:
+    max-items-per-order: 5  # Small limit for testing
+    default-region: TEST
+
+  features:
+    auto-confirm: false
+    metrics-enabled: false
+    audit-logging: false
+    rate-limiting: false
+
+  notifications:
+    enabled: false
+    provider: mock
+
+  storage:
+    type: memory
+    base-path: /tmp/orderflow-test
+
+  cache:
+    type: none
+    ttl-seconds: 0
+
+# Quiet logging for tests
+logging:
+  level:
+    root: WARN
+    com.example.orderflow: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+
+# Disable actuator endpoints in tests
+management:
+  endpoints:
+    enabled-by-default: false
