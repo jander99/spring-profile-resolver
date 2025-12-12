@@ -77,13 +77,139 @@ database:
     max-size: 50
 ```
 
-## Configuration Resolution Order
+## How Spring Boot Compiles application.yml into Profiles
 
-Following Spring Boot's precedence rules:
+Spring Boot 2.4+ uses a sophisticated system for loading and merging configuration files. Here's how it works:
 
-1. `application.yml` (base configuration)
-2. `application-{profile}.yml` for each profile in specified order
-3. Multi-document sections matching active profiles
+### Spring Boot's Config Data Loading Order
+
+When Spring Boot starts, it loads config data files in this order (later sources override earlier ones):
+
+1. **Application properties inside the jar** - `application.yml` or `application.properties` packaged in your jar
+2. **Profile-specific properties inside the jar** - `application-{profile}.yml` for each active profile
+3. **Application properties outside the jar** - External `application.yml` in the working directory or config locations
+4. **Profile-specific properties outside the jar** - External `application-{profile}.yml` files
+
+### Multi-Document YAML Files
+
+Spring Boot supports multiple YAML documents in a single file, separated by `---`:
+
+```yaml
+# Base configuration (always loaded)
+server:
+  port: 8080
+app:
+  name: MyApp
+---
+# Loaded only when 'dev' profile is active
+spring:
+  config:
+    activate:
+      on-profile: dev
+server:
+  port: 9000
+logging:
+  level:
+    root: DEBUG
+---
+# Loaded only when 'prod' profile is active
+spring:
+  config:
+    activate:
+      on-profile: prod
+server:
+  port: 80
+logging:
+  level:
+    root: WARN
+```
+
+**Key rules for multi-document YAML:**
+- Documents are loaded in declaration order (top to bottom)
+- Documents without `spring.config.activate.on-profile` apply to all profiles
+- Documents with `on-profile` only apply when that profile is active
+- Later documents override earlier ones ("last wins")
+
+### Profile Groups
+
+Profile groups let you activate multiple profiles with a single name:
+
+```yaml
+spring:
+  profiles:
+    group:
+      production: proddb,prodmq,monitoring
+      proddb: postgres,hikari
+```
+
+When you activate `production`, Spring Boot expands it to: `production`, `proddb`, `postgres`, `hikari`, `prodmq`, `monitoring`.
+
+### Property Placeholders
+
+Spring Boot resolves `${...}` placeholders after all files are merged:
+
+```yaml
+database:
+  host: localhost
+  port: 5432
+  url: jdbc:postgresql://${database.host}:${database.port}/${database.name}
+
+cache:
+  host: ${CACHE_HOST:redis.local}  # Uses default if CACHE_HOST not defined
+```
+
+### Spring Boot's Full PropertySource Hierarchy
+
+For context, here's the complete precedence order (highest priority first):
+
+1. Command-line arguments (`--server.port=9000`)
+2. `SPRING_APPLICATION_JSON` properties
+3. ServletConfig/ServletContext init parameters
+4. JNDI attributes
+5. Java System properties
+6. OS environment variables
+7. RandomValuePropertySource (`random.*`)
+8. **Config data files** (see loading order above)
+9. `@PropertySource` annotations
+10. Default properties via `SpringApplication.setDefaultProperties()`
+
+### Restrictions in Spring Boot 2.4+
+
+The following combinations are **not allowed**:
+- `spring.config.activate.on-profile` + `spring.profiles.active` in the same document
+- `spring.config.activate.on-profile` + `spring.profiles.include` in the same document
+- `spring.profiles.group.*` in profile-specific documents (must be in base config)
+
+---
+
+## What This Tool Implements
+
+This tool implements the **config data file** portion of Spring Boot's configuration resolution:
+
+| Feature | Supported | Notes |
+|---------|-----------|-------|
+| Base `application.yml` | ✅ | |
+| Profile-specific `application-{profile}.yml` | ✅ | |
+| Multi-document YAML (`---` separator) | ✅ | |
+| `spring.config.activate.on-profile` | ✅ | Simple profile names only |
+| Profile groups | ✅ | With circular reference detection |
+| Property placeholders (`${name}`) | ✅ | |
+| Default values (`${name:default}`) | ✅ | |
+| Test resources override | ✅ | With `--include-test` flag |
+| Last-wins merge strategy | ✅ | |
+| External config files | ❌ | Focuses on source files only |
+| Environment variables as sources | ❌ | Pre-deployment analysis tool |
+| Profile expressions (`prod & cloud`) | ❌ | Only simple profile names |
+| `.properties` file format | ❌ | YAML only |
+| `spring.config.import` | ❌ | |
+
+### Resolution Order in This Tool
+
+Following Spring Boot's precedence rules for packaged config files:
+
+1. `application.yml` (base configuration, no activation condition)
+2. Multi-document sections in `application.yml` matching active profiles
+3. `application-{profile}.yml` for each profile in specified order
 4. Test resources (only with `--include-test`, applied last as overrides)
 
 Later sources override earlier ones for the same keys.
