@@ -23,6 +23,8 @@ def resolve_profiles(
     include_test: bool = False,
     env_vars: dict[str, str] | None = None,
     use_system_env: bool = True,
+    vcap_services_json: str | None = None,
+    vcap_application_json: str | None = None,
 ) -> ResolverResult:
     """Main entry point for profile resolution.
 
@@ -33,7 +35,7 @@ def resolve_profiles(
     4. Extract and expand profile groups from base config
     5. Filter applicable documents based on active profiles
     6. Merge in order (main first, then test overrides if enabled)
-    7. Resolve placeholders (with env var support)
+    7. Resolve placeholders (with env var and VCAP support)
     8. Return result with warnings
 
     Args:
@@ -43,6 +45,8 @@ def resolve_profiles(
         include_test: Whether to include test resources
         env_vars: Optional dict of environment variables for placeholder resolution
         use_system_env: Whether to check system env vars during placeholder resolution
+        vcap_services_json: Optional VCAP_SERVICES JSON for Cloud Foundry support
+        vcap_application_json: Optional VCAP_APPLICATION JSON for Cloud Foundry support
 
     Returns:
         ResolverResult with merged config, sources, and warnings
@@ -135,11 +139,13 @@ def resolve_profiles(
     # Merge all applicable documents
     merged_config, sources = merge_configs(sorted_docs)
 
-    # Resolve placeholders (with env var support)
+    # Resolve placeholders (with env var and VCAP support)
     resolved_config, placeholder_warnings = resolve_placeholders(
         merged_config,
         env_vars=env_vars,
         use_system_env=use_system_env,
+        vcap_services_json=vcap_services_json,
+        vcap_application_json=vcap_application_json,
     )
     warnings.extend(placeholder_warnings)
 
@@ -315,6 +321,8 @@ def run_resolver(
     to_stdout: bool = False,
     env_vars: dict[str, str] | None = None,
     use_system_env: bool = True,
+    vcap_services_json: str | None = None,
+    vcap_application_json: str | None = None,
 ) -> tuple[str, list[str]]:
     """Run the full resolver pipeline and generate output.
 
@@ -327,6 +335,8 @@ def run_resolver(
         to_stdout: Whether to print to stdout
         env_vars: Optional dict of environment variables for placeholder resolution
         use_system_env: Whether to check system env vars during placeholder resolution
+        vcap_services_json: Optional VCAP_SERVICES JSON for Cloud Foundry support
+        vcap_application_json: Optional VCAP_APPLICATION JSON for Cloud Foundry support
 
     Returns:
         Tuple of (output_yaml, warnings)
@@ -338,6 +348,8 @@ def run_resolver(
         include_test=include_test,
         env_vars=env_vars,
         use_system_env=use_system_env,
+        vcap_services_json=vcap_services_json,
+        vcap_application_json=vcap_application_json,
     )
 
     # Determine output path
