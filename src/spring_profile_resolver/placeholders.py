@@ -36,7 +36,7 @@ def resolve_placeholders(
         use_system_env: Whether to also check system env vars (os.environ)
         vcap_services_json: Optional VCAP_SERVICES JSON (reads from env if None and use_system_env)
         vcap_application_json: Optional VCAP_APPLICATION JSON (reads from env if None and use_system_env)
-        ignore_vcap_warnings: Whether to suppress VCAP availability warnings
+        ignore_vcap_warnings: Whether to suppress all VCAP-related warnings
 
     Returns:
         Tuple of (resolved_config, warnings) where warnings contains
@@ -46,7 +46,9 @@ def resolve_placeholders(
     warnings: list[str] = []
 
     # Check for placeholders without defaults before resolution
-    no_default_warnings = _find_placeholders_without_defaults(result, result, env_vars, use_system_env)
+    no_default_warnings = _find_placeholders_without_defaults(
+        result, result, env_vars, use_system_env, ignore_vcap=ignore_vcap_warnings
+    )
     warnings.extend(no_default_warnings)
 
     # Load VCAP config if available
@@ -71,7 +73,7 @@ def resolve_placeholders(
             break
 
     # Collect any remaining unresolved placeholders
-    remaining = _find_unresolved_placeholders(result)
+    remaining = _find_unresolved_placeholders(result, ignore_vcap=ignore_vcap_warnings)
     for path, placeholder in remaining:
         warnings.append(f"Unresolved placeholder at {path}: {placeholder}")
 
@@ -146,11 +148,20 @@ def _find_placeholders_without_defaults(
     env_vars: dict[str, str] | None,
     use_system_env: bool,
     path_prefix: str = "",
+    ignore_vcap: bool = False,
 ) -> list[str]:
     """Find placeholders that have no default and don't reference existing config.
 
     These are risky because they will fail to resolve unless the value
     is provided via environment variables at runtime.
+
+    Args:
+        config: Configuration dictionary to scan
+        root_config: Full config for value lookups
+        env_vars: Optional dict of environment variables
+        use_system_env: Whether to check system env vars
+        path_prefix: Current path prefix for nested configs
+        ignore_vcap: Whether to skip VCAP placeholders
 
     Returns:
         List of warning messages
@@ -164,6 +175,10 @@ def _find_placeholders_without_defaults(
         for match in PLACEHOLDER_PATTERN.finditer(value):
             key_path = match.group(1)
             default_value = match.group(2)
+
+            # Skip VCAP placeholders if ignoring
+            if ignore_vcap and is_vcap_placeholder(key_path):
+                continue
 
             # Skip if it has a default value
             if default_value is not None:
@@ -404,8 +419,14 @@ def _deep_copy_config(config: dict[str, Any]) -> dict[str, Any]:
 def _find_unresolved_placeholders(
     config: dict[str, Any],
     path_prefix: str = "",
+    ignore_vcap: bool = False,
 ) -> list[tuple[str, str]]:
     """Find all remaining unresolved placeholders in config.
+
+    Args:
+        config: Configuration dictionary to scan
+        path_prefix: Current path prefix for nested configs
+        ignore_vcap: Whether to skip VCAP placeholders
 
     Returns:
         List of (path, placeholder) tuples
@@ -416,17 +437,23 @@ def _find_unresolved_placeholders(
         current_path = f"{path_prefix}.{key}" if path_prefix else key
 
         if isinstance(value, dict):
-            results.extend(_find_unresolved_placeholders(value, current_path))
+            results.extend(_find_unresolved_placeholders(value, current_path, ignore_vcap))
         elif isinstance(value, list):
             for i, item in enumerate(value):
                 item_path = f"{current_path}[{i}]"
                 if isinstance(item, str):
                     for match in PLACEHOLDER_PATTERN.finditer(item):
+                        key_path = match.group(1)
+                        if ignore_vcap and is_vcap_placeholder(key_path):
+                            continue
                         results.append((item_path, match.group(0)))
                 elif isinstance(item, dict):
-                    results.extend(_find_unresolved_placeholders(item, item_path))
+                    results.extend(_find_unresolved_placeholders(item, item_path, ignore_vcap))
         elif isinstance(value, str):
             for match in PLACEHOLDER_PATTERN.finditer(value):
+                key_path = match.group(1)
+                if ignore_vcap and is_vcap_placeholder(key_path):
+                    continue
                 results.append((current_path, match.group(0)))
 
     return results

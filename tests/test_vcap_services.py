@@ -393,8 +393,8 @@ class TestIgnoreVcapWarnings:
         vcap_warnings = [w for w in warnings if "VCAP_APPLICATION" in w]
         assert len(vcap_warnings) == 0
 
-    def test_ignore_vcap_warnings_still_shows_unresolved_placeholder_warning(self, monkeypatch):
-        """Test that ignore_vcap_warnings still shows unresolved placeholder warning."""
+    def test_ignore_vcap_warnings_suppresses_all_vcap_warnings(self, monkeypatch):
+        """Test that ignore_vcap_warnings suppresses ALL VCAP-related warnings."""
         from spring_profile_resolver.placeholders import resolve_placeholders
 
         # Ensure VCAP env vars are not set
@@ -413,9 +413,9 @@ class TestIgnoreVcapWarnings:
             ignore_vcap_warnings=True,
         )
 
-        # Should still have unresolved placeholder warning
-        unresolved_warnings = [w for w in warnings if "Unresolved placeholder" in w]
-        assert len(unresolved_warnings) == 1
+        # Should NOT have any VCAP-related warnings (including unresolved placeholder)
+        vcap_warnings = [w for w in warnings if "vcap" in w.lower()]
+        assert len(vcap_warnings) == 0
 
     def test_ignore_vcap_warnings_does_not_affect_other_warnings(self, monkeypatch):
         """Test that ignore_vcap_warnings doesn't suppress non-VCAP warnings."""
