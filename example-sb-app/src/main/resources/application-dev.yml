@@ -1,0 +1,47 @@
+# =============================================================================
+# Development Environment Configuration
+# =============================================================================
+# Use with: SPRING_PROFILES_ACTIVE=dev
+#
+# This profile enables development-friendly defaults:
+# - Verbose logging
+# - Auto-DDL for database
+# - Relaxed security
+# - Local storage
+#
+# The 'dev' profile group automatically includes: h2, local
+# =============================================================================
+
+orderflow:
+  environment: development
+
+  orders:
+    max-items-per-order: 10  # Lower limit for testing
+    default-region: US-DEV
+
+  features:
+    auto-confirm: true  # Auto-confirm orders for easier testing
+
+  cache:
+    ttl-seconds: 60  # Short TTL for development
+    max-size: 100
+
+# Server settings for development
+server:
+  error:
+    include-stacktrace: always
+
+# Development logging - verbose output
+logging:
+  level:
+    root: INFO
+    com.example.orderflow: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.hibernate.type.descriptor.sql.BasicBinder: TRACE
+
+# Spring DevTools would be configured here in a real app
+spring:
+  jackson:
+    serialization:
+      indent-output: true  # Pretty print JSON in dev

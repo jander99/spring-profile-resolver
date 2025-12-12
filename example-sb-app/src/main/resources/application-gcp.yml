@@ -1,0 +1,39 @@
+# =============================================================================
+# GCP Platform Configuration
+# =============================================================================
+# Use with: SPRING_PROFILES_ACTIVE=gcp (or a profile group that includes it)
+#
+# GCP platform settings for running in Google Cloud:
+# - Cloud Storage for files
+# - Cloud SQL for database
+# - Memorystore for Redis
+# - Cloud Pub/Sub for notifications
+# =============================================================================
+
+orderflow:
+  platform: gcp
+
+  storage:
+    type: gcs
+    gcp:
+      bucket: ${GCP_STORAGE_BUCKET:orderflow-storage}
+      project-id: ${GCP_PROJECT_ID:}
+      credentials-path: ${GOOGLE_APPLICATION_CREDENTIALS:}
+
+  notifications:
+    provider: pubsub  # Use Pub/Sub for notifications
+
+  cache:
+    redis:
+      host: ${GCP_MEMORYSTORE_HOST:localhost}
+      port: ${GCP_MEMORYSTORE_PORT:6379}
+
+# Cloud SQL settings
+spring:
+  datasource:
+    url: ${GCP_CLOUDSQL_URL:jdbc:postgresql://localhost:5432/orderflow}
+    username: ${GCP_CLOUDSQL_USERNAME:orderflow}
+    password: ${GCP_CLOUDSQL_PASSWORD:orderflow}
+
+  # Cloud SQL socket factory would be configured here for production
+  # For Cloud Run / App Engine, this uses Unix socket

@@ -1,0 +1,55 @@
+# =============================================================================
+# Staging Environment Configuration
+# =============================================================================
+# Use with: SPRING_PROFILES_ACTIVE=staging
+#
+# Staging mirrors production but with:
+# - More verbose logging for debugging
+# - Separate credentials/endpoints
+# - Test data endpoints enabled
+#
+# The 'staging' profile group automatically includes: postgres, aws
+# =============================================================================
+
+orderflow:
+  environment: staging
+
+  orders:
+    max-items-per-order: 75
+    default-region: US-STAGING
+
+  features:
+    auto-confirm: false
+    audit-logging: true  # Enable audit logging for testing
+
+  notifications:
+    provider: ses  # Use AWS SES but with staging config
+    email:
+      from: staging-noreply@orderflow.example
+      reply-to: staging-support@orderflow.example
+
+  cache:
+    ttl-seconds: 180  # Moderate TTL
+    max-size: 500
+
+# Database connection pool for staging
+spring:
+  datasource:
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+
+# Logging for staging - more detail than prod, less than dev
+logging:
+  level:
+    root: INFO
+    com.example.orderflow: DEBUG
+    org.springframework: INFO
+    org.hibernate: INFO
+
+# Actuator - expose more endpoints for debugging
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,env,configprops
