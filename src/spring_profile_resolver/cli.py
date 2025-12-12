@@ -169,7 +169,7 @@ def main(
             raise typer.Exit(1) from e
 
     try:
-        output_yaml, warnings = run_resolver(
+        output_yaml, warnings, errors = run_resolver(
             project_path=project_path,
             profiles=profile_list,
             resource_dirs=resource_dirs,
@@ -193,6 +193,18 @@ def main(
                     border_style="yellow",
                 )
             )
+
+        # Display errors and fail if any YAML parse errors occurred
+        if errors:
+            error_console.print()
+            error_console.print(
+                Panel(
+                    "\n".join(f"[red]•[/red] {e}" for e in errors),
+                    title="[red]YAML Parse Errors[/red]",
+                    border_style="red",
+                )
+            )
+            raise typer.Exit(1)
 
         # Success message (if not stdout mode)
         if not stdout:

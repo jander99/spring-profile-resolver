@@ -146,6 +146,48 @@ class TestGenerateComputedYaml:
         assert "3.14" in result
         assert "boolean: true" in result
 
+    def test_list_of_dicts_produces_valid_yaml(self) -> None:
+        """Test that lists of dicts produce valid YAML with proper indentation.
+
+        This is a regression test for a bug where list items containing dicts
+        would have broken indentation, making the YAML invalid.
+        """
+        from ruamel.yaml import YAML
+        from io import StringIO
+
+        config = {
+            "authority-mappings": [
+                {
+                    "issuer-name": "pingfed-pr",
+                    "audience": "test-audience",
+                    "authorities": ["ROLE_read"],
+                },
+                {
+                    "issuer-name": "azuread-pr",
+                    "audience": "test-audience-2",
+                    "authorities": ["ROLE_read", "ROLE_write"],
+                },
+            ]
+        }
+        sources = {"authority-mappings": ConfigSource(Path("application.yml"))}
+
+        result = generate_computed_yaml(config, sources)
+
+        # Parse the output to verify it's valid YAML
+        yaml = YAML()
+        parsed = yaml.load(StringIO(result))
+
+        # Verify structure is preserved
+        assert "authority-mappings" in parsed
+        assert len(parsed["authority-mappings"]) == 2
+        assert parsed["authority-mappings"][0]["issuer-name"] == "pingfed-pr"
+        assert parsed["authority-mappings"][0]["audience"] == "test-audience"
+        assert parsed["authority-mappings"][1]["issuer-name"] == "azuread-pr"
+        assert parsed["authority-mappings"][1]["authorities"] == [
+            "ROLE_read",
+            "ROLE_write",
+        ]
+
 
 class TestFormatOutputFilename:
     """Tests for format_output_filename function."""

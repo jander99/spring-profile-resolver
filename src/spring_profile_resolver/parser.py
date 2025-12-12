@@ -4,7 +4,9 @@ from pathlib import Path
 from typing import Any
 
 from ruamel.yaml import YAML
+from ruamel.yaml import YAMLError
 
+from .exceptions import InvalidYAMLError
 from .models import ConfigDocument
 
 
@@ -54,29 +56,36 @@ def parse_yaml_file(path: Path) -> list[ConfigDocument]:
 
     Raises:
         FileNotFoundError: If the file doesn't exist
-        ruamel.yaml.YAMLError: If the YAML is malformed
+        InvalidYAMLError: If the YAML is malformed
     """
     yaml = create_yaml_parser()
     documents: list[ConfigDocument] = []
 
-    with open(path) as f:
-        for index, doc in enumerate(yaml.load_all(f)):
-            if doc is None:
-                # Skip empty documents
-                continue
+    try:
+        with open(path) as f:
+            for index, doc in enumerate(yaml.load_all(f)):
+                if doc is None:
+                    # Skip empty documents
+                    continue
 
-            # Convert ruamel.yaml's CommentedMap to regular dict for easier handling
-            content = dict(doc) if doc else {}
-            activation_profile = extract_activation_profile(content)
+                # Convert ruamel.yaml's CommentedMap to regular dict for easier handling
+                content = dict(doc) if doc else {}
+                activation_profile = extract_activation_profile(content)
 
-            documents.append(
-                ConfigDocument(
-                    content=content,
-                    source_file=path,
-                    activation_profile=activation_profile,
-                    document_index=index,
+                documents.append(
+                    ConfigDocument(
+                        content=content,
+                        source_file=path,
+                        activation_profile=activation_profile,
+                        document_index=index,
+                    )
                 )
-            )
+    except YAMLError as e:
+        # Extract line number from YAMLError if available
+        line_num = None
+        if hasattr(e, "problem_mark") and e.problem_mark is not None:
+            line_num = e.problem_mark.line + 1  # Convert 0-indexed to 1-indexed
+        raise InvalidYAMLError(path, line=line_num, details=str(e)) from e
 
     return documents
 

@@ -71,3 +71,4 @@ class ResolverResult:
     config: dict[str, Any]
     sources: dict[str, ConfigSource]
     warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
