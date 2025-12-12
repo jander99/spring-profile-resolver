@@ -8,6 +8,7 @@ from rich.console import Console
 from rich.panel import Panel
 
 from .env_vars import load_env_file, parse_env_overrides
+from .output import format_output_filename
 from .resolver import run_resolver
 
 app = typer.Typer(
@@ -143,7 +144,7 @@ def main(
     if env_file:
         try:
             env_vars.update(load_env_file(env_file))
-        except Exception as e:
+        except (OSError, ValueError, UnicodeDecodeError) as e:
             error_console.print(f"[red]Error loading env file:[/red] {e}")
             raise typer.Exit(1) from e
 
@@ -157,14 +158,14 @@ def main(
     if vcap_services_file:
         try:
             vcap_services_json = vcap_services_file.read_text(encoding="utf-8")
-        except Exception as e:
+        except (OSError, UnicodeDecodeError) as e:
             error_console.print(f"[red]Error loading VCAP_SERVICES file:[/red] {e}")
             raise typer.Exit(1) from e
 
     if vcap_application_file:
         try:
             vcap_application_json = vcap_application_file.read_text(encoding="utf-8")
-        except Exception as e:
+        except (OSError, UnicodeDecodeError) as e:
             error_console.print(f"[red]Error loading VCAP_APPLICATION file:[/red] {e}")
             raise typer.Exit(1) from e
 
@@ -208,18 +209,15 @@ def main(
 
         # Success message (if not stdout mode)
         if not stdout:
-            if output:
-                output_file = output / f"application-{'-'.join(profile_list)}-computed.yml"
-            else:
-                output_file = Path.cwd() / ".computed" / f"application-{'-'.join(profile_list)}-computed.yml"
+            filename = format_output_filename(profile_list)
+            output_dir = output if output else Path.cwd() / ".computed"
+            output_file = output_dir / filename
 
             console.print(
                 f"\n[green]✓[/green] Configuration written to [bold]{output_file}[/bold]"
             )
 
-    except typer.Exit:
-        raise
-    except Exception as e:
+    except (OSError, ValueError, RuntimeError) as e:
         error_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
 

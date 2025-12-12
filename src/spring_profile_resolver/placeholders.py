@@ -6,7 +6,87 @@ from typing import Any
 from .vcap_services import get_vcap_config, is_vcap_available, is_vcap_placeholder
 
 # Pattern to match ${property.name} or ${property.name:default}
-PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}:]+)(?::([^}]*))?\}")
+# Length limits prevent ReDoS attacks with malicious input
+PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}:]{1,256})(?::([^}]{0,1024}))?\}")
+
+
+def _detect_circular_references(config: dict[str, Any]) -> list[str]:
+    """Detect circular placeholder references in configuration.
+
+    Builds a dependency graph of placeholder references and detects cycles.
+    Only checks references to config properties (not env vars or VCAP).
+
+    Args:
+        config: Configuration dictionary to scan
+
+    Returns:
+        List of warning messages about circular references detected
+    """
+    warnings: list[str] = []
+
+    # Build dependency graph: property_path -> list of referenced property paths
+    dependencies: dict[str, list[str]] = {}
+
+    def scan_for_dependencies(cfg: dict[str, Any], path_prefix: str = "") -> None:
+        for key, value in cfg.items():
+            current_path = f"{path_prefix}.{key}" if path_prefix else key
+            if isinstance(value, dict):
+                scan_for_dependencies(value, current_path)
+            elif isinstance(value, str) and "${" in value:
+                refs = []
+                for match in PLACEHOLDER_PATTERN.finditer(value):
+                    ref_path = match.group(1)
+                    # Only track references to config properties (not env vars or VCAP)
+                    if not is_vcap_placeholder(ref_path):
+                        refs.append(ref_path)
+                if refs:
+                    dependencies[current_path] = refs
+
+    scan_for_dependencies(config)
+
+    # Detect cycles using DFS
+    visited: set[str] = set()
+    in_stack: set[str] = set()
+    cycles_found: list[list[str]] = []
+
+    def find_cycle(path: str, chain: list[str]) -> None:
+        if path in in_stack:
+            # Found a cycle - extract it
+            cycle_start = chain.index(path)
+            cycle = chain[cycle_start:] + [path]
+            cycles_found.append(cycle)
+            return
+
+        if path in visited:
+            return
+
+        visited.add(path)
+        in_stack.add(path)
+
+        # Follow references from this path
+        for ref in dependencies.get(path, []):
+            find_cycle(ref, chain + [path])
+
+        in_stack.remove(path)
+
+    # Check all starting points
+    for start_path in dependencies:
+        if start_path not in visited:
+            find_cycle(start_path, [])
+
+    # Generate warnings for unique cycles
+    seen_cycles: set[str] = set()
+    for cycle in cycles_found:
+        # Normalize cycle representation for deduplication
+        cycle_key = " -> ".join(cycle)
+        if cycle_key not in seen_cycles:
+            seen_cycles.add(cycle_key)
+            warnings.append(
+                f"Circular placeholder reference detected: {cycle_key}. "
+                f"This will prevent resolution from completing."
+            )
+
+    return warnings
 
 
 def resolve_placeholders(
@@ -45,6 +125,10 @@ def resolve_placeholders(
     result = _deep_copy_config(config)
     warnings: list[str] = []
 
+    # Detect circular references early
+    circular_warnings = _detect_circular_references(result)
+    warnings.extend(circular_warnings)
+
     # Check for placeholders without defaults before resolution
     no_default_warnings = _find_placeholders_without_defaults(
         result, result, env_vars, use_system_env, ignore_vcap=ignore_vcap_warnings
@@ -54,7 +138,8 @@ def resolve_placeholders(
     # Load VCAP config if available
     vcap_config: dict[str, Any] = {}
     if use_system_env or vcap_services_json or vcap_application_json:
-        vcap_config = get_vcap_config(vcap_services_json, vcap_application_json)
+        vcap_config, vcap_warnings = get_vcap_config(vcap_services_json, vcap_application_json)
+        warnings.extend(vcap_warnings)
 
     # Check for VCAP placeholders when VCAP is not available (unless ignored)
     if not ignore_vcap_warnings:
@@ -378,24 +463,63 @@ def _get_env_value(
 
 
 def get_nested_value(config: dict[str, Any], key_path: str) -> Any | None:
-    """Get value by dot-notation path.
+    """Get value by dot-notation path with optional array index support.
+
+    Supports paths like:
+    - 'server.port' - simple nested access
+    - 'items[0]' - array index access
+    - 'items[0].name' - array index followed by property
+    - 'servers[1].hosts[0]' - multiple array indices
+    - 'matrix[0][1]' - consecutive array indices
 
     Args:
         config: Configuration dictionary
-        key_path: Dot-separated path like 'server.port' or 'database.host'
+        key_path: Dot-separated path with optional [index] notation
 
     Returns:
         Value at the path, or None if not found
     """
+    # Pattern to match: optional_key followed by one or more [index]
+    # e.g., "key[0]", "key[0][1]", "[0]", "[0][1]"
+    array_pattern = re.compile(r"^([^\[]*)((?:\[\d+\])+)$")
+    index_pattern = re.compile(r"\[(\d+)\]")
+
     parts = key_path.split(".")
     current: Any = config
 
     for part in parts:
-        if not isinstance(current, dict):
-            return None
-        if part not in current:
-            return None
-        current = current[part]
+        if not part:
+            continue
+
+        # Check if this part has array indices
+        match = array_pattern.match(part)
+        if match:
+            key_name = match.group(1)
+            indices_str = match.group(2)
+
+            # First get the key if present
+            if key_name:
+                if not isinstance(current, dict):
+                    return None
+                if key_name not in current:
+                    return None
+                current = current[key_name]
+
+            # Then apply all indices
+            for idx_match in index_pattern.finditer(indices_str):
+                index = int(idx_match.group(1))
+                if not isinstance(current, list):
+                    return None
+                if index < 0 or index >= len(current):
+                    return None
+                current = current[index]
+        else:
+            # Regular dict access
+            if not isinstance(current, dict):
+                return None
+            if part not in current:
+                return None
+            current = current[part]
 
     return current
 

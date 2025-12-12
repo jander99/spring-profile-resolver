@@ -16,6 +16,9 @@ from .profiles import (
     parse_profile_groups,
 )
 
+# Maximum depth for spring.config.import recursion (protection against infinite loops)
+MAX_IMPORT_DEPTH = 10
+
 
 def resolve_profiles(
     project_path: Path,
@@ -192,6 +195,8 @@ def _process_imports(
     source_file: Path,
     resource_dirs: list[Path],
     loaded_files: set[Path],
+    max_depth: int = MAX_IMPORT_DEPTH,
+    current_depth: int = 0,
 ) -> tuple[list[ConfigDocument], list[str], list[str]]:
     """Process spring.config.import directives from documents.
 
@@ -200,6 +205,8 @@ def _process_imports(
         source_file: Path to the source file
         resource_dirs: Resource directories for classpath: resolution
         loaded_files: Set of already loaded files (modified in place)
+        max_depth: Maximum import recursion depth (default: 10)
+        current_depth: Current recursion depth (internal)
 
     Returns:
         Tuple of (imported_documents, warnings, errors)
@@ -207,6 +214,14 @@ def _process_imports(
     imported_docs: list[ConfigDocument] = []
     warnings: list[str] = []
     errors: list[str] = []
+
+    # Check depth limit to prevent infinite recursion
+    if current_depth >= max_depth:
+        warnings.append(
+            f"Import depth limit ({max_depth}) exceeded at {source_file}. "
+            f"This may indicate circular imports or overly nested configuration."
+        )
+        return imported_docs, warnings, errors
 
     for doc in documents:
         if doc.activation_profile is not None:
@@ -234,7 +249,8 @@ def _process_imports(
 
                     # Recursively process imports from this file
                     nested_docs, nested_warnings, nested_errors = _process_imports(
-                        new_docs, import_path, resource_dirs, loaded_files
+                        new_docs, import_path, resource_dirs, loaded_files,
+                        max_depth=max_depth, current_depth=current_depth + 1
                     )
                     imported_docs.extend(nested_docs)
                     warnings.extend(nested_warnings)

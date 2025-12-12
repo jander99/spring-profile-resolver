@@ -152,8 +152,9 @@ class TestGenerateComputedYaml:
         This is a regression test for a bug where list items containing dicts
         would have broken indentation, making the YAML invalid.
         """
-        from ruamel.yaml import YAML
         from io import StringIO
+
+        from ruamel.yaml import YAML
 
         config = {
             "authority-mappings": [

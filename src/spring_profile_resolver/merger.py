@@ -1,5 +1,6 @@
 """Deep merge configuration with source tracking."""
 
+import copy
 from typing import Any
 
 from .models import ConfigDocument, ConfigSource
@@ -24,8 +25,9 @@ def deep_merge(
     Returns:
         Tuple of (merged_config, sources_map)
     """
-    result = dict(base)
-    sources = dict(base_sources)
+    # Use deep copy to ensure nested structures are not shared references
+    result = copy.deepcopy(base)
+    sources = dict(base_sources)  # Source tracking is flat, shallow copy is fine
 
     for key, override_value in override.items():
         current_path = f"{path_prefix}.{key}" if path_prefix else key
@@ -78,7 +80,18 @@ def _track_sources(
 
 
 def _remove_sources_under_path(path: str, sources: dict[str, ConfigSource]) -> None:
-    """Remove all source entries at or under the given path."""
+    """Remove all source entries at or under the given path.
+
+    This function has O(n) complexity where n is the number of entries in sources,
+    as it must scan all keys to find those matching the path prefix. This is
+    acceptable for typical Spring Boot configurations which have limited depth
+    and key counts, but could be optimized with a trie-based structure if
+    configurations grow very large.
+
+    Args:
+        path: The configuration path to remove (e.g., "server.ssl")
+        sources: The sources map to modify in place
+    """
     prefix = path + "."
     keys_to_remove = [k for k in sources if k == path or k.startswith(prefix)]
     for k in keys_to_remove:

@@ -60,11 +60,13 @@ def parse_properties_content(content: str, source_path: Path) -> list[ConfigDocu
 
     for index, (doc_lines, activation_profile) in enumerate(doc_chunks):
         properties = _parse_properties_lines(doc_lines)
-        nested_config = _properties_to_nested_dict(properties)
 
-        # Handle activation profile from within the document
+        # Handle activation profile from within the document BEFORE building nested config
+        # This ensures the activation key is not included in the final config
         if activation_profile is None:
-            activation_profile = _extract_activation_from_properties(properties)
+            activation_profile, properties = _extract_activation_from_properties(properties)
+
+        nested_config = _properties_to_nested_dict(properties)
 
         if nested_config or activation_profile is not None:
             documents.append(
@@ -259,8 +261,14 @@ def _unescape_property_string(s: str) -> str:
                 # Unicode escape
                 try:
                     code_point = int(s[i + 2 : i + 6], 16)
-                    result.append(chr(code_point))
-                    i += 6
+                    # Validate not a surrogate (U+D800-U+DFFF) which are invalid in UTF-8
+                    if 0xD800 <= code_point <= 0xDFFF:
+                        # Invalid surrogate, treat backslash as literal
+                        result.append(s[i])
+                        i += 1
+                    else:
+                        result.append(chr(code_point))
+                        i += 6
                 except ValueError:
                     result.append(s[i])
                     i += 1
@@ -405,16 +413,30 @@ def _convert_value(value: str) -> Any:
     return value
 
 
-def _extract_activation_from_properties(properties: dict[str, str]) -> str | None:
+def _extract_activation_from_properties(
+    properties: dict[str, str],
+) -> tuple[str | None, dict[str, str]]:
     """Extract spring.config.activate.on-profile from properties.
 
-    Also removes it from the properties dict as it's metadata.
+    Returns the activation profile and a copy of properties with the
+    activation key removed (since it's metadata, not config).
+
+    This function does NOT mutate the input properties dict.
+
+    Args:
+        properties: Flat properties dictionary
+
+    Returns:
+        Tuple of (activation_profile, filtered_properties) where:
+        - activation_profile is the value of spring.config.activate.on-profile or None
+        - filtered_properties is a copy of properties without the activation key
     """
     key = "spring.config.activate.on-profile"
     if key in properties:
-        value = properties.pop(key)
-        return str(value)
-    return None
+        activation = str(properties[key])
+        filtered = {k: v for k, v in properties.items() if k != key}
+        return activation, filtered
+    return None, properties
 
 
 def get_profile_from_properties_filename(path: Path) -> str | None:

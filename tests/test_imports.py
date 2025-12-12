@@ -1,8 +1,6 @@
 """Tests for spring.config.import handling."""
 
-from pathlib import Path
 
-import pytest
 
 from spring_profile_resolver.imports import (
     ImportLocation,
@@ -226,3 +224,81 @@ spring:
         assert result.config["server"]["port"] == 8080
         # No warning for optional missing file
         assert not any("nonexistent" in w for w in result.warnings)
+
+
+class TestImportDepthLimit:
+    """Tests for import depth limit protection."""
+
+    def test_deep_import_chain_warns(self, tmp_path):
+        """Deeply nested imports should generate a warning."""
+        from spring_profile_resolver.resolver import MAX_IMPORT_DEPTH, resolve_profiles
+
+        resources = tmp_path / "src" / "main" / "resources"
+        resources.mkdir(parents=True)
+
+        # Create a chain of imports exceeding max depth
+        for i in range(MAX_IMPORT_DEPTH + 5):
+            if i == 0:
+                file_path = resources / "application.yml"
+                next_file = "level1.yml"
+            else:
+                file_path = resources / f"level{i}.yml"
+                next_file = f"level{i + 1}.yml"
+
+            file_path.write_text(f"""
+level: {i}
+spring:
+  config:
+    import: file:{next_file}
+""")
+
+        # Create final file without import
+        final_file = resources / f"level{MAX_IMPORT_DEPTH + 5}.yml"
+        final_file.write_text("""
+level: final
+""")
+
+        result = resolve_profiles(tmp_path, ["default"])
+
+        # Should have a warning about depth limit
+        assert any("depth limit" in w.lower() for w in result.warnings), \
+            f"Expected depth limit warning, got: {result.warnings}"
+
+    def test_normal_depth_accepted(self, tmp_path):
+        """Normal import depth (within limit) should work without warnings."""
+        from spring_profile_resolver.resolver import resolve_profiles
+
+        resources = tmp_path / "src" / "main" / "resources"
+        resources.mkdir(parents=True)
+
+        # Create a chain of 3 imports (well within limit)
+        main_config = resources / "application.yml"
+        main_config.write_text("""
+level: 0
+spring:
+  config:
+    import: file:level1.yml
+""")
+
+        level1 = resources / "level1.yml"
+        level1.write_text("""
+level: 1
+spring:
+  config:
+    import: file:level2.yml
+""")
+
+        level2 = resources / "level2.yml"
+        level2.write_text("""
+level: 2
+final: true
+""")
+
+        result = resolve_profiles(tmp_path, ["default"])
+
+        # Should not have depth limit warning
+        assert not any("depth limit" in w.lower() for w in result.warnings), \
+            f"Unexpected depth limit warning: {result.warnings}"
+
+        # All levels should be merged
+        assert result.config.get("final") is True

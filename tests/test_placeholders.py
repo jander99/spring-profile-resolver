@@ -38,6 +38,45 @@ class TestGetNestedValue:
         config = {"server": "not-a-dict"}
         assert get_nested_value(config, "server.port") is None
 
+    def test_array_index_simple(self) -> None:
+        """Test getting a value by array index."""
+        config = {"items": ["first", "second", "third"]}
+        assert get_nested_value(config, "items[0]") == "first"
+        assert get_nested_value(config, "items[1]") == "second"
+        assert get_nested_value(config, "items[2]") == "third"
+
+    def test_array_index_out_of_bounds(self) -> None:
+        """Test array index out of bounds returns None."""
+        config = {"items": ["first", "second"]}
+        assert get_nested_value(config, "items[5]") is None
+
+    def test_array_index_with_nested_property(self) -> None:
+        """Test array index followed by property access."""
+        config = {
+            "servers": [
+                {"host": "server1.example.com", "port": 8080},
+                {"host": "server2.example.com", "port": 8081},
+            ]
+        }
+        assert get_nested_value(config, "servers[0].host") == "server1.example.com"
+        assert get_nested_value(config, "servers[1].port") == 8081
+
+    def test_multiple_array_indices(self) -> None:
+        """Test multiple array index accesses in path."""
+        config = {
+            "matrix": [
+                [1, 2, 3],
+                [4, 5, 6],
+            ]
+        }
+        assert get_nested_value(config, "matrix[0][1]") == 2
+        assert get_nested_value(config, "matrix[1][2]") == 6
+
+    def test_array_index_non_list(self) -> None:
+        """Test array index on non-list returns None."""
+        config = {"items": "not-a-list"}
+        assert get_nested_value(config, "items[0]") is None
+
 
 class TestResolveSingleValue:
     """Tests for resolve_single_value function."""
@@ -236,6 +275,22 @@ class TestResolvePlaceholders:
         assert result["services"][1]["url"] == "http://api.example.com/orders"
         assert len(warnings) == 0
 
+    def test_array_index_placeholder(self) -> None:
+        """Test resolving placeholder with array index syntax."""
+        config = {
+            "servers": [
+                {"host": "primary.example.com"},
+                {"host": "secondary.example.com"},
+            ],
+            "primary_host": "${servers[0].host}",
+            "secondary_host": "${servers[1].host}",
+        }
+        result, warnings = resolve_placeholders(config)
+
+        assert result["primary_host"] == "primary.example.com"
+        assert result["secondary_host"] == "secondary.example.com"
+        assert len([w for w in warnings if "Unresolved" in w]) == 0
+
 
 class TestPlaceholderWithoutDefaultWarnings:
     """Tests for warnings about placeholders without defaults."""
@@ -371,3 +426,94 @@ class TestPlaceholderWithoutDefaultWarnings:
 
         no_default_warnings = [w for w in warnings if "without default" in w]
         assert len(no_default_warnings) == 0
+
+
+class TestCircularReferenceDetection:
+    """Tests for circular reference detection in placeholders."""
+
+    def test_simple_circular_reference(self) -> None:
+        """Test detection of simple circular reference: a -> b -> a."""
+        config = {
+            "a": "${b}",
+            "b": "${a}",
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should detect circular reference
+        circular_warnings = [w for w in warnings if "Circular" in w]
+        assert len(circular_warnings) >= 1
+        # Check that the cycle is mentioned
+        assert any("a" in w and "b" in w for w in circular_warnings)
+
+    def test_self_referential(self) -> None:
+        """Test detection of self-referential placeholder: a -> a."""
+        config = {
+            "a": "${a}",
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should detect circular reference
+        circular_warnings = [w for w in warnings if "Circular" in w]
+        assert len(circular_warnings) >= 1
+
+    def test_longer_circular_chain(self) -> None:
+        """Test detection of longer circular chain: a -> b -> c -> a."""
+        config = {
+            "a": "${b}",
+            "b": "${c}",
+            "c": "${a}",
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should detect circular reference
+        circular_warnings = [w for w in warnings if "Circular" in w]
+        assert len(circular_warnings) >= 1
+
+    def test_no_warning_for_valid_chain(self) -> None:
+        """Test that valid chain without cycle does not generate warning."""
+        config = {
+            "a": "${b}",
+            "b": "${c}",
+            "c": "final_value",
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should NOT detect circular reference
+        circular_warnings = [w for w in warnings if "Circular" in w]
+        assert len(circular_warnings) == 0
+
+        # Should resolve correctly
+        assert result["a"] == "final_value"
+        assert result["b"] == "final_value"
+        assert result["c"] == "final_value"
+
+    def test_nested_circular_reference(self) -> None:
+        """Test detection of circular reference in nested config."""
+        config = {
+            "server": {
+                "host": "${server.url}",
+                "url": "http://${server.host}:8080",
+            }
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        # Should detect circular reference
+        circular_warnings = [w for w in warnings if "Circular" in w]
+        assert len(circular_warnings) >= 1
+
+    def test_circular_warning_message_content(self) -> None:
+        """Test that circular warning message is informative."""
+        config = {
+            "a": "${b}",
+            "b": "${a}",
+        }
+        result, warnings = resolve_placeholders(config, use_system_env=False)
+
+        circular_warnings = [w for w in warnings if "Circular" in w]
+        assert len(circular_warnings) >= 1
+
+        warning = circular_warnings[0]
+        # Should mention it's circular
+        assert "Circular" in warning
+        # Should indicate it prevents resolution
+        assert "prevent" in warning.lower() or "completing" in warning.lower()
