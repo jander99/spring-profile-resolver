@@ -340,3 +340,131 @@ class TestVcapPlaceholderResolution:
         vcap_warnings = [w for w in warnings if "VCAP_SERVICES" in w]
         assert len(vcap_warnings) == 1
         assert "Cloud Foundry" in vcap_warnings[0]
+
+
+class TestIgnoreVcapWarnings:
+    """Tests for the ignore_vcap_warnings functionality."""
+
+    def test_ignore_vcap_warnings_suppresses_vcap_services_warning(self, monkeypatch):
+        """Test that ignore_vcap_warnings=True suppresses VCAP_SERVICES warnings."""
+        from spring_profile_resolver.placeholders import resolve_placeholders
+
+        # Ensure VCAP env vars are not set
+        monkeypatch.delenv("VCAP_SERVICES", raising=False)
+        monkeypatch.delenv("VCAP_APPLICATION", raising=False)
+
+        config = {
+            "database": {
+                "url": "${vcap.services.mydb.credentials.uri}"
+            }
+        }
+
+        result, warnings = resolve_placeholders(
+            config,
+            use_system_env=False,
+            ignore_vcap_warnings=True,
+        )
+
+        # Should NOT have VCAP unavailable warning
+        vcap_warnings = [w for w in warnings if "VCAP_SERVICES" in w]
+        assert len(vcap_warnings) == 0
+
+    def test_ignore_vcap_warnings_suppresses_vcap_application_warning(self, monkeypatch):
+        """Test that ignore_vcap_warnings=True suppresses VCAP_APPLICATION warnings."""
+        from spring_profile_resolver.placeholders import resolve_placeholders
+
+        # Ensure VCAP env vars are not set
+        monkeypatch.delenv("VCAP_SERVICES", raising=False)
+        monkeypatch.delenv("VCAP_APPLICATION", raising=False)
+
+        config = {
+            "app": {
+                "name": "${vcap.application.application_name}"
+            }
+        }
+
+        result, warnings = resolve_placeholders(
+            config,
+            use_system_env=False,
+            ignore_vcap_warnings=True,
+        )
+
+        # Should NOT have VCAP unavailable warning
+        vcap_warnings = [w for w in warnings if "VCAP_APPLICATION" in w]
+        assert len(vcap_warnings) == 0
+
+    def test_ignore_vcap_warnings_still_shows_unresolved_placeholder_warning(self, monkeypatch):
+        """Test that ignore_vcap_warnings still shows unresolved placeholder warning."""
+        from spring_profile_resolver.placeholders import resolve_placeholders
+
+        # Ensure VCAP env vars are not set
+        monkeypatch.delenv("VCAP_SERVICES", raising=False)
+        monkeypatch.delenv("VCAP_APPLICATION", raising=False)
+
+        config = {
+            "database": {
+                "url": "${vcap.services.mydb.credentials.uri}"
+            }
+        }
+
+        result, warnings = resolve_placeholders(
+            config,
+            use_system_env=False,
+            ignore_vcap_warnings=True,
+        )
+
+        # Should still have unresolved placeholder warning
+        unresolved_warnings = [w for w in warnings if "Unresolved placeholder" in w]
+        assert len(unresolved_warnings) == 1
+
+    def test_ignore_vcap_warnings_does_not_affect_other_warnings(self, monkeypatch):
+        """Test that ignore_vcap_warnings doesn't suppress non-VCAP warnings."""
+        from spring_profile_resolver.placeholders import resolve_placeholders
+
+        monkeypatch.delenv("VCAP_SERVICES", raising=False)
+        monkeypatch.delenv("VCAP_APPLICATION", raising=False)
+
+        config = {
+            "database": {
+                "host": "${DATABASE_HOST}",
+                "vcap_url": "${vcap.services.mydb.credentials.uri}"
+            }
+        }
+
+        result, warnings = resolve_placeholders(
+            config,
+            use_system_env=False,
+            ignore_vcap_warnings=True,
+        )
+
+        # Should still have warning about DATABASE_HOST having no default
+        no_default_warnings = [w for w in warnings if "without default" in w and "DATABASE_HOST" in w]
+        assert len(no_default_warnings) == 1
+
+        # Should NOT have VCAP warning
+        vcap_warnings = [w for w in warnings if "VCAP_SERVICES" in w and "Cloud Foundry" in w]
+        assert len(vcap_warnings) == 0
+
+    def test_ignore_vcap_false_shows_warnings(self, monkeypatch):
+        """Test that ignore_vcap_warnings=False (default) shows VCAP warnings."""
+        from spring_profile_resolver.placeholders import resolve_placeholders
+
+        # Ensure VCAP env vars are not set
+        monkeypatch.delenv("VCAP_SERVICES", raising=False)
+        monkeypatch.delenv("VCAP_APPLICATION", raising=False)
+
+        config = {
+            "database": {
+                "url": "${vcap.services.mydb.credentials.uri}"
+            }
+        }
+
+        result, warnings = resolve_placeholders(
+            config,
+            use_system_env=False,
+            ignore_vcap_warnings=False,  # Explicit default
+        )
+
+        # Should have VCAP unavailable warning
+        vcap_warnings = [w for w in warnings if "VCAP_SERVICES" in w]
+        assert len(vcap_warnings) == 1

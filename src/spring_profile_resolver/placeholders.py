@@ -16,6 +16,7 @@ def resolve_placeholders(
     use_system_env: bool = True,
     vcap_services_json: str | None = None,
     vcap_application_json: str | None = None,
+    ignore_vcap_warnings: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     """Resolve all ${...} placeholders in config values.
 
@@ -35,6 +36,7 @@ def resolve_placeholders(
         use_system_env: Whether to also check system env vars (os.environ)
         vcap_services_json: Optional VCAP_SERVICES JSON (reads from env if None and use_system_env)
         vcap_application_json: Optional VCAP_APPLICATION JSON (reads from env if None and use_system_env)
+        ignore_vcap_warnings: Whether to suppress VCAP availability warnings
 
     Returns:
         Tuple of (resolved_config, warnings) where warnings contains
@@ -52,11 +54,12 @@ def resolve_placeholders(
     if use_system_env or vcap_services_json or vcap_application_json:
         vcap_config = get_vcap_config(vcap_services_json, vcap_application_json)
 
-    # Check for VCAP placeholders when VCAP is not available
-    vcap_available = is_vcap_available() or bool(vcap_services_json) or bool(vcap_application_json)
-    if not vcap_available:
-        vcap_warnings = _check_vcap_placeholder_warnings(result)
-        warnings.extend(vcap_warnings)
+    # Check for VCAP placeholders when VCAP is not available (unless ignored)
+    if not ignore_vcap_warnings:
+        vcap_available = is_vcap_available() or bool(vcap_services_json) or bool(vcap_application_json)
+        if not vcap_available:
+            vcap_warnings = _check_vcap_placeholder_warnings(result)
+            warnings.extend(vcap_warnings)
 
     for _ in range(max_iterations):
         result, changed, new_warnings = _resolve_pass(

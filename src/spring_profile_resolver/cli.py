@@ -117,6 +117,13 @@ def main(
             dir_okay=False,
         ),
     ] = None,
+    ignore_vcap: Annotated[
+        bool,
+        typer.Option(
+            "--ignore-vcap",
+            help="Suppress warnings about VCAP_SERVICES/VCAP_APPLICATION not being available",
+        ),
+    ] = False,
 ) -> None:
     """Compute effective Spring Boot configuration for given profiles."""
     # Parse profiles
@@ -173,6 +180,7 @@ def main(
             use_system_env=not no_system_env,
             vcap_services_json=vcap_services_json,
             vcap_application_json=vcap_application_json,
+            ignore_vcap_warnings=ignore_vcap,
         )
 
         # Display warnings

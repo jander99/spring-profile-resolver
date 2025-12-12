@@ -25,6 +25,7 @@ def resolve_profiles(
     use_system_env: bool = True,
     vcap_services_json: str | None = None,
     vcap_application_json: str | None = None,
+    ignore_vcap_warnings: bool = False,
 ) -> ResolverResult:
     """Main entry point for profile resolution.
 
@@ -47,6 +48,7 @@ def resolve_profiles(
         use_system_env: Whether to check system env vars during placeholder resolution
         vcap_services_json: Optional VCAP_SERVICES JSON for Cloud Foundry support
         vcap_application_json: Optional VCAP_APPLICATION JSON for Cloud Foundry support
+        ignore_vcap_warnings: Whether to suppress VCAP availability warnings
 
     Returns:
         ResolverResult with merged config, sources, and warnings
@@ -146,6 +148,7 @@ def resolve_profiles(
         use_system_env=use_system_env,
         vcap_services_json=vcap_services_json,
         vcap_application_json=vcap_application_json,
+        ignore_vcap_warnings=ignore_vcap_warnings,
     )
     warnings.extend(placeholder_warnings)
 
@@ -323,6 +326,7 @@ def run_resolver(
     use_system_env: bool = True,
     vcap_services_json: str | None = None,
     vcap_application_json: str | None = None,
+    ignore_vcap_warnings: bool = False,
 ) -> tuple[str, list[str]]:
     """Run the full resolver pipeline and generate output.
 
@@ -337,6 +341,7 @@ def run_resolver(
         use_system_env: Whether to check system env vars during placeholder resolution
         vcap_services_json: Optional VCAP_SERVICES JSON for Cloud Foundry support
         vcap_application_json: Optional VCAP_APPLICATION JSON for Cloud Foundry support
+        ignore_vcap_warnings: Whether to suppress VCAP availability warnings
 
     Returns:
         Tuple of (output_yaml, warnings)
@@ -350,6 +355,7 @@ def run_resolver(
         use_system_env=use_system_env,
         vcap_services_json=vcap_services_json,
         vcap_application_json=vcap_application_json,
+        ignore_vcap_warnings=ignore_vcap_warnings,
     )
 
     # Determine output path
