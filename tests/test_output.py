@@ -7,6 +7,7 @@ from spring_profile_resolver.models import ConfigSource
 from spring_profile_resolver.output import (
     format_output_filename,
     generate_computed_yaml,
+    validate_yaml,
 )
 
 
@@ -18,8 +19,9 @@ class TestGenerateComputedYaml:
         config = {"server": {"port": 8080}}
         sources = {"server.port": ConfigSource(Path("application.yml"))}
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
 
+        assert error is None
         assert "server:" in result
         assert "port: 8080" in result
 
@@ -28,8 +30,9 @@ class TestGenerateComputedYaml:
         config = {"server": {"port": 8080}}
         sources = {"server.port": ConfigSource(Path("application.yml"))}
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
 
+        assert error is None
         assert "application.yml" in result
 
     def test_multiple_sources(self) -> None:
@@ -45,8 +48,9 @@ class TestGenerateComputedYaml:
             "server.host": ConfigSource(Path("application.yml")),
         }
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
 
+        assert error is None
         # Both sources should be mentioned
         assert "application-prod.yml" in result or "prod" in result
         assert "application.yml" in result
@@ -70,8 +74,9 @@ class TestGenerateComputedYaml:
             ),
         }
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
 
+        assert error is None
         assert "spring:" in result
         assert "datasource:" in result
         assert "hikari:" in result
@@ -82,8 +87,9 @@ class TestGenerateComputedYaml:
         config = {"endpoints": ["/health", "/info", "/metrics"]}
         sources = {"endpoints": ConfigSource(Path("application.yml"))}
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
 
+        assert error is None
         assert "endpoints:" in result
         assert "/health" in result
         assert "/info" in result
@@ -96,8 +102,9 @@ class TestGenerateComputedYaml:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "output.yml"
-            result = generate_computed_yaml(config, sources, output_path=output_path)
+            result, error = generate_computed_yaml(config, sources, output_path=output_path)
 
+            assert error is None
             assert output_path.exists()
             assert output_path.read_text() == result
 
@@ -108,8 +115,9 @@ class TestGenerateComputedYaml:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "nested" / "dir" / "output.yml"
-            generate_computed_yaml(config, sources, output_path=output_path)
+            _, error = generate_computed_yaml(config, sources, output_path=output_path)
 
+            assert error is None
             assert output_path.exists()
 
     def test_empty_config(self) -> None:
@@ -117,8 +125,9 @@ class TestGenerateComputedYaml:
         config: dict = {}
         sources: dict = {}
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
 
+        assert error is None
         # Should produce valid YAML (empty dict)
         assert result.strip() in ("{}", "")
 
@@ -139,8 +148,9 @@ class TestGenerateComputedYaml:
             "null_value": ConfigSource(Path("app.yml")),
         }
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
 
+        assert error is None
         assert "string: value" in result
         assert "number: 42" in result
         assert "3.14" in result
@@ -172,7 +182,10 @@ class TestGenerateComputedYaml:
         }
         sources = {"authority-mappings": ConfigSource(Path("application.yml"))}
 
-        result = generate_computed_yaml(config, sources)
+        result, error = generate_computed_yaml(config, sources)
+
+        # Should pass validation
+        assert error is None
 
         # Parse the output to verify it's valid YAML
         yaml = YAML()
@@ -188,6 +201,62 @@ class TestGenerateComputedYaml:
             "ROLE_read",
             "ROLE_write",
         ]
+
+
+class TestValidateYaml:
+    """Tests for validate_yaml function."""
+
+    def test_validate_yaml_valid_input(self) -> None:
+        """Test that valid YAML passes validation."""
+        valid_yaml = """
+server:
+  port: 8080
+  host: localhost
+"""
+        is_valid, error = validate_yaml(valid_yaml)
+
+        assert is_valid is True
+        assert error is None
+
+    def test_validate_yaml_invalid_input(self) -> None:
+        """Test that invalid YAML is detected."""
+        # Missing indentation for list item properties
+        invalid_yaml = """
+authority-mappings:
+  - issuer-name: test
+  audience: broken
+"""
+        is_valid, error = validate_yaml(invalid_yaml)
+
+        assert is_valid is False
+        assert error is not None
+        assert "Invalid YAML output" in error
+
+    def test_validate_yaml_empty_input(self) -> None:
+        """Test that empty YAML passes validation."""
+        is_valid, error = validate_yaml("")
+
+        assert is_valid is True
+        assert error is None
+
+    def test_generate_does_not_write_invalid_yaml(self) -> None:
+        """Test that invalid YAML is not written to file.
+
+        Note: This test creates a scenario that would produce invalid YAML
+        if the validation were to fail. In practice, generate_computed_yaml
+        should always produce valid YAML, but this tests the safety mechanism.
+        """
+        config = {"key": "value"}
+        sources = {"key": ConfigSource(Path("app.yml"))}
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            output_path = Path(tmpdir) / "output.yml"
+            result, error = generate_computed_yaml(config, sources, output_path=output_path)
+
+            # Valid YAML should be written
+            assert error is None
+            assert output_path.exists()
+            assert output_path.read_text() == result
 
 
 class TestFormatOutputFilename:

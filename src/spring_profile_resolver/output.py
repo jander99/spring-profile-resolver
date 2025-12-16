@@ -7,8 +7,26 @@ from typing import Any
 
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
+from ruamel.yaml.error import YAMLError
 
 from .models import ConfigSource
+
+
+def validate_yaml(yaml_string: str) -> tuple[bool, str | None]:
+    """Validate that a YAML string is parseable.
+
+    Args:
+        yaml_string: The YAML content to validate
+
+    Returns:
+        Tuple of (is_valid, error_message). error_message is None if valid.
+    """
+    yaml = YAML()
+    try:
+        yaml.load(StringIO(yaml_string))
+        return True, None
+    except YAMLError as e:
+        return False, f"Invalid YAML output: {e}"
 
 
 def generate_computed_yaml(
@@ -16,7 +34,7 @@ def generate_computed_yaml(
     sources: dict[str, ConfigSource],
     output_path: Path | None = None,
     to_stdout: bool = False,
-) -> str:
+) -> tuple[str, str | None]:
     """Generate the computed YAML with source comments.
 
     Args:
@@ -26,7 +44,7 @@ def generate_computed_yaml(
         to_stdout: If True, also print to stdout
 
     Returns:
-        The generated YAML string
+        Tuple of (yaml_string, validation_error). validation_error is None if valid.
     """
     # Build a CommentedMap with source annotations
     commented_config = _build_commented_map(config, sources)
@@ -40,8 +58,11 @@ def generate_computed_yaml(
     yaml.dump(commented_config, stream)
     result = stream.getvalue()
 
-    # Write to file if path provided
-    if output_path:
+    # Validate the generated YAML
+    is_valid, validation_error = validate_yaml(result)
+
+    # Only write to file if valid
+    if output_path and is_valid:
         output_path.parent.mkdir(parents=True, exist_ok=True)
         output_path.write_text(result)
 
@@ -49,7 +70,7 @@ def generate_computed_yaml(
     if to_stdout:
         print(result)
 
-    return result
+    return result, validation_error
 
 
 def _build_commented_map(

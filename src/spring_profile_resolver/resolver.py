@@ -399,11 +399,16 @@ def run_resolver(
         output_path = output_dir / filename
 
     # Generate output
-    output_yaml = generate_computed_yaml(
+    output_yaml, validation_error = generate_computed_yaml(
         config=result.config,
         sources=result.sources,
         output_path=output_path,
         to_stdout=to_stdout,
     )
 
-    return output_yaml, result.warnings, result.errors
+    # Collect errors
+    errors = result.errors.copy()
+    if validation_error:
+        errors.append(validation_error)
+
+    return output_yaml, result.warnings, errors
