@@ -80,13 +80,11 @@ def _build_commented_map(
 ) -> CommentedMap:
     """Build a CommentedMap with source attribution comments.
 
-    Uses block comments for sections where all values come from the same source,
-    and inline comments when individual keys differ.
+    Uses inline end-of-line comments for all source attributions to maintain
+    valid YAML structure. Comments are added when a key's source differs from
+    its parent section's source.
     """
     result = CommentedMap()
-
-    # Track which source we last emitted a block comment for
-    last_block_source: str | None = None
 
     for key, value in config.items():
         current_path = f"{path_prefix}.{key}" if path_prefix else key
@@ -99,41 +97,33 @@ def _build_commented_map(
             nested = _build_commented_map(value, sources, current_path)
             result[key] = nested
 
-            # Add block comment if source changes
-            if section_source and section_source != last_block_source:
-                result.yaml_set_comment_before_after_key(
-                    key, before=f"From: {section_source}"
-                )
-                last_block_source = section_source
+            # Add inline comment if source differs from parent
+            section_source = _get_section_source(current_path, sources)
+            parent_source = _get_parent_source(current_path, sources)
+
+            if section_source and (not parent_source or section_source != parent_source):
+                result.yaml_add_eol_comment(section_source, key)
         elif isinstance(value, list):
             # Convert list items, recursively handling nested dicts
             result[key] = _build_commented_seq(value, sources, current_path)
 
-            # Add block comment if source changes
-            if section_source and section_source != last_block_source:
-                result.yaml_set_comment_before_after_key(
-                    key, before=f"From: {section_source}"
-                )
-                last_block_source = section_source
+            # Add inline comment to list key if source differs from parent
+            if current_path in sources:
+                list_source = str(sources[current_path])
+                parent_source = _get_parent_source(current_path, sources)
+
+                if not parent_source or list_source != parent_source:
+                    result.yaml_add_eol_comment(list_source, key)
         else:
             result[key] = value
 
-            # Determine comment style for this value
+            # Add inline comment if source differs from parent
             if current_path in sources:
                 value_source = str(sources[current_path])
-
-                # Check if this differs from the expected section source
                 parent_source = _get_parent_source(current_path, sources)
 
-                if parent_source and value_source != parent_source:
-                    # Different source than parent - use inline comment
+                if not parent_source or value_source != parent_source:
                     result.yaml_add_eol_comment(value_source, key)
-                elif not parent_source and section_source != last_block_source:
-                    # Top-level key or new section
-                    result.yaml_set_comment_before_after_key(
-                        key, before=f"From: {value_source}"
-                    )
-                    last_block_source = section_source
 
     return result
 
