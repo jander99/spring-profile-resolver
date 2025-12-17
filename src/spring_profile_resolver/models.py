@@ -6,6 +6,9 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .expressions import ProfileExpr
+    from .linting import LintIssue
+    from .security import SecurityIssue
+    from .validation import ValidationIssue
 
 
 @dataclass
@@ -73,3 +76,6 @@ class ResolverResult:
     base_properties: set[str] = field(default_factory=set)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    validation_issues: list["ValidationIssue"] = field(default_factory=list)
+    security_issues: list["SecurityIssue"] = field(default_factory=list)
+    lint_issues: list["LintIssue"] = field(default_factory=list)

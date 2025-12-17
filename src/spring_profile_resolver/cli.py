@@ -137,6 +137,34 @@ def main(
             help="Suppress warnings about VCAP_SERVICES/VCAP_APPLICATION not being available",
         ),
     ] = False,
+    validate: Annotated[
+        bool,
+        typer.Option(
+            "--validate",
+            help="Enable configuration validation (check for property conflicts)",
+        ),
+    ] = False,
+    security_scan: Annotated[
+        bool,
+        typer.Option(
+            "--security-scan",
+            help="Enable security scanning (detect secrets and insecure configurations)",
+        ),
+    ] = False,
+    lint: Annotated[
+        bool,
+        typer.Option(
+            "--lint",
+            help="Enable configuration linting (check naming conventions and best practices)",
+        ),
+    ] = False,
+    strict_lint: Annotated[
+        bool,
+        typer.Option(
+            "--strict-lint",
+            help="Apply strict linting rules (upgrades warnings to errors)",
+        ),
+    ] = False,
 ) -> None:
     """Compute effective Spring Boot configuration for given profiles."""
     # Parse profiles
@@ -182,7 +210,7 @@ def main(
             raise typer.Exit(1) from e
 
     try:
-        output_yaml, warnings, errors = run_resolver(
+        result = run_resolver(
             project_path=project_path,
             profiles=profile_list,
             resource_dirs=resource_dirs,
@@ -194,29 +222,101 @@ def main(
             vcap_services_json=vcap_services_json,
             vcap_application_json=vcap_application_json,
             ignore_vcap_warnings=ignore_vcap,
+            enable_validation=validate,
+            enable_security_scan=security_scan,
+            enable_linting=lint,
+            strict_linting=strict_lint,
         )
 
+        # Display validation issues
+        if result.validation_issues:
+            error_console.print()
+            lines = []
+            for issue in result.validation_issues:
+                severity_color = "red" if issue.severity == "error" else "yellow"
+                lines.append(f"[{severity_color}]•[/{severity_color}] [{issue.severity.upper()}] {issue.property_path}: {issue.message}")
+                if issue.suggestion:
+                    lines.append(f"  [dim]→ {issue.suggestion}[/dim]")
+            error_console.print(
+                Panel(
+                    "\n".join(lines),
+                    title="[cyan]Validation Issues[/cyan]",
+                    border_style="cyan",
+                )
+            )
+
+        # Display security issues
+        if result.security_issues:
+            error_console.print()
+            lines = []
+            for sec_issue in result.security_issues:
+                # Map severity to color
+                severity_colors = {
+                    "critical": "bright_red",
+                    "high": "red",
+                    "medium": "yellow",
+                    "low": "blue",
+                }
+                color = severity_colors.get(sec_issue.severity, "white")
+                lines.append(f"[{color}]•[/{color}] [{sec_issue.severity.upper()}] {sec_issue.property_path}: {sec_issue.message}")
+                if sec_issue.recommendation:
+                    lines.append(f"  [dim]→ {sec_issue.recommendation}[/dim]")
+            error_console.print(
+                Panel(
+                    "\n".join(lines),
+                    title="[red]Security Issues[/red]",
+                    border_style="red",
+                )
+            )
+
+        # Display linting issues
+        if result.lint_issues:
+            error_console.print()
+            lines = []
+            for lint_issue in result.lint_issues:
+                severity_color = {"error": "red", "warning": "yellow", "info": "blue"}.get(lint_issue.severity, "white")
+                lines.append(f"[{severity_color}]•[/{severity_color}] [{lint_issue.severity.upper()}] {lint_issue.property_path}: {lint_issue.message}")
+                if lint_issue.suggestion:
+                    lines.append(f"  [dim]→ {lint_issue.suggestion}[/dim]")
+            error_console.print(
+                Panel(
+                    "\n".join(lines),
+                    title="[magenta]Linting Issues[/magenta]",
+                    border_style="magenta",
+                )
+            )
+
         # Display warnings
-        if warnings:
+        if result.warnings:
             error_console.print()
             error_console.print(
                 Panel(
-                    "\n".join(f"[yellow]•[/yellow] {w}" for w in warnings),
+                    "\n".join(f"[yellow]•[/yellow] {w}" for w in result.warnings),
                     title="[yellow]Warnings[/yellow]",
                     border_style="yellow",
                 )
             )
 
         # Display errors and fail if any YAML parse errors occurred
-        if errors:
+        if result.errors:
             error_console.print()
             error_console.print(
                 Panel(
-                    "\n".join(f"[red]•[/red] {e}" for e in errors),
+                    "\n".join(f"[red]•[/red] {e}" for e in result.errors),
                     title="[red]YAML Parse Errors[/red]",
                     border_style="red",
                 )
             )
+            raise typer.Exit(1)
+
+        # Check for critical security issues or validation errors
+        has_critical_security = any(i.severity == "critical" for i in result.security_issues)
+        has_validation_errors = any(i.severity == "error" for i in result.validation_issues)
+        has_lint_errors = any(i.severity == "error" for i in result.lint_issues)
+
+        if has_critical_security or has_validation_errors or has_lint_errors:
+            error_console.print()
+            error_console.print("[red]Configuration has critical issues that must be addressed.[/red]")
             raise typer.Exit(1)
 
         # Success message (if not stdout mode)

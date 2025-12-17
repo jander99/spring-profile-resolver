@@ -61,6 +61,10 @@ def resolve_profiles(
     vcap_services_json: str | None = None,
     vcap_application_json: str | None = None,
     ignore_vcap_warnings: bool = False,
+    enable_validation: bool = False,
+    enable_security_scan: bool = False,
+    enable_linting: bool = False,
+    strict_linting: bool = False,
 ) -> ResolverResult:
     """Main entry point for profile resolution.
 
@@ -72,7 +76,8 @@ def resolve_profiles(
     5. Filter applicable documents based on active profiles
     6. Merge in order (main first, then test overrides if enabled)
     7. Resolve placeholders (with env var and VCAP support)
-    8. Return result with warnings
+    8. Run validation, security scanning, and linting (if enabled)
+    9. Return result with warnings and issues
 
     Args:
         project_path: Path to Spring Boot project root
@@ -84,9 +89,13 @@ def resolve_profiles(
         vcap_services_json: Optional VCAP_SERVICES JSON for Cloud Foundry support
         vcap_application_json: Optional VCAP_APPLICATION JSON for Cloud Foundry support
         ignore_vcap_warnings: Whether to suppress VCAP availability warnings
+        enable_validation: Whether to run configuration validation
+        enable_security_scan: Whether to run security scanning
+        enable_linting: Whether to run configuration linting
+        strict_linting: Whether to apply strict linting rules
 
     Returns:
-        ResolverResult with merged config, sources, warnings, and errors
+        ResolverResult with merged config, sources, warnings, errors, and analysis results
     """
     warnings: list[str] = []
     errors: list[str] = []
@@ -200,12 +209,33 @@ def resolve_profiles(
     )
     warnings.extend(placeholder_warnings)
 
+    # Run validation, security scanning, and linting if enabled
+    from .linting import LintIssue, lint_configuration
+    from .security import SecurityIssue, scan_configuration
+    from .validation import ValidationIssue, validate_configuration
+
+    validation_issues: list[ValidationIssue] = []
+    security_issues: list[SecurityIssue] = []
+    lint_issues: list[LintIssue] = []
+
+    if enable_validation:
+        validation_issues = validate_configuration(resolved_config)
+
+    if enable_security_scan:
+        security_issues = scan_configuration(resolved_config)
+
+    if enable_linting:
+        lint_issues = lint_configuration(resolved_config, strict=strict_linting)
+
     return ResolverResult(
         config=resolved_config,
         sources=sources,
         base_properties=base_properties,
         warnings=warnings,
         errors=errors,
+        validation_issues=validation_issues,
+        security_issues=security_issues,
+        lint_issues=lint_issues,
     )
 
 
@@ -394,7 +424,11 @@ def run_resolver(
     vcap_services_json: str | None = None,
     vcap_application_json: str | None = None,
     ignore_vcap_warnings: bool = False,
-) -> tuple[str, list[str], list[str]]:
+    enable_validation: bool = False,
+    enable_security_scan: bool = False,
+    enable_linting: bool = False,
+    strict_linting: bool = False,
+) -> ResolverResult:
     """Run the full resolver pipeline and generate output.
 
     Args:
@@ -409,9 +443,13 @@ def run_resolver(
         vcap_services_json: Optional VCAP_SERVICES JSON for Cloud Foundry support
         vcap_application_json: Optional VCAP_APPLICATION JSON for Cloud Foundry support
         ignore_vcap_warnings: Whether to suppress VCAP availability warnings
+        enable_validation: Whether to run configuration validation
+        enable_security_scan: Whether to run security scanning
+        enable_linting: Whether to run configuration linting
+        strict_linting: Whether to apply strict linting rules
 
     Returns:
-        Tuple of (output_yaml, warnings, errors)
+        ResolverResult with all configuration and analysis results
     """
     result = resolve_profiles(
         project_path=project_path,
@@ -423,6 +461,10 @@ def run_resolver(
         vcap_services_json=vcap_services_json,
         vcap_application_json=vcap_application_json,
         ignore_vcap_warnings=ignore_vcap_warnings,
+        enable_validation=enable_validation,
+        enable_security_scan=enable_security_scan,
+        enable_linting=enable_linting,
+        strict_linting=strict_linting,
     )
 
     # Determine output path
@@ -447,7 +489,11 @@ def run_resolver(
     if validation_error:
         errors.append(validation_error)
 
-    # Combine all warnings
+    # Add new property warnings from output generation
     all_warnings = result.warnings + new_property_warnings
 
-    return output_yaml, all_warnings, errors
+    # Update result with combined warnings and errors
+    result.warnings = all_warnings
+    result.errors = errors
+
+    return result
