@@ -70,5 +70,6 @@ class ResolverResult:
 
     config: dict[str, Any]
     sources: dict[str, ConfigSource]
+    base_properties: set[str] = field(default_factory=set)
     warnings: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
