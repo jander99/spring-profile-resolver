@@ -1,7 +1,8 @@
 """Command-line interface for Spring Profile Resolver."""
 
+from importlib.metadata import version
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Optional
 
 import typer
 from rich.console import Console
@@ -11,17 +12,18 @@ from .env_vars import load_env_file, parse_env_overrides
 from .output import format_output_filename
 from .resolver import run_resolver
 
-app = typer.Typer(
-    name="spring-profile-resolver",
-    help="Compute effective Spring Boot configuration for given profiles.",
-    add_completion=False,
-)
-
 console = Console()
 error_console = Console(stderr=True)
 
 
-@app.command()
+def version_callback(value: bool) -> None:
+    """Print version and exit."""
+    if value:
+        pkg_version = version("spring-profile-resolver")
+        console.print(f"spring-profile-resolver version {pkg_version}")
+        raise typer.Exit()
+
+
 def main(
     project_path: Annotated[
         Path,
@@ -41,6 +43,16 @@ def main(
             help="Comma-separated list of profiles to activate",
         ),
     ],
+    version_flag: Annotated[
+        Optional[bool],
+        typer.Option(
+            "--version",
+            "-v",
+            help="Show version and exit",
+            callback=version_callback,
+            is_eager=True,
+        ),
+    ] = None,
     resources: Annotated[
         str | None,
         typer.Option(
@@ -220,6 +232,11 @@ def main(
     except (OSError, ValueError, RuntimeError) as e:
         error_console.print(f"[red]Error:[/red] {e}")
         raise typer.Exit(1) from e
+
+
+def app() -> None:
+    """Entry point for the CLI application."""
+    typer.run(main)
 
 
 if __name__ == "__main__":
