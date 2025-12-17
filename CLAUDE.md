@@ -31,6 +31,9 @@ uv run mypy src
 
 # Run the CLI locally
 uv run spring-profile-resolver --profiles dev --resources . ./test-fixtures/simple
+
+# Run with validation, security scanning, and linting
+uv run spring-profile-resolver --profiles prod --validate --security-scan --lint ./test-fixtures/simple
 ```
 
 ## Architecture Overview
@@ -46,10 +49,12 @@ The main flow in `resolve_profiles()`:
 4. Filter documents based on active profiles using profile expressions
 5. Sort and merge documents (last-wins semantics)
 6. Resolve `${placeholder}` references (supports env vars, defaults, VCAP)
-7. Return `ResolverResult` with merged config and source tracking
+7. Run optional validation, security scanning, and linting (if enabled)
+8. Return `ResolverResult` with merged config, source tracking, and analysis results
 
 ### Key Modules
 
+#### Core Pipeline
 - **cli.py**: Typer-based CLI, handles arg parsing and output formatting
 - **resolver.py**: Orchestrates the full resolution pipeline
 - **parser.py**: Parses YAML/Properties files into `ConfigDocument` objects
@@ -61,6 +66,11 @@ The main flow in `resolve_profiles()`:
 - **imports.py**: Handles `spring.config.import` directives
 - **output.py**: Generates final YAML with source comments
 - **models.py**: Core data structures (`ConfigDocument`, `ConfigSource`, `ResolverResult`)
+
+#### Configuration Analysis (Optional Features)
+- **validation.py**: Validates configuration for property conflicts and dangerous patterns
+- **security.py**: Scans for hardcoded secrets and insecure configurations
+- **linting.py**: Checks naming conventions and configuration best practices
 
 ### Data Flow
 
@@ -77,8 +87,39 @@ application*.yml/properties files
         ↓
     resolve ${...}    (placeholders.py)
         ↓
+    analyze (optional) (validation.py, security.py, linting.py)
+        ↓
     YAML output       (output.py)
 ```
+
+### Configuration Analysis Features
+
+The tool provides optional analysis features to help identify issues in Spring Boot configurations:
+
+#### Validation (`--validate`)
+Checks for:
+- Mutually exclusive properties (e.g., `datasource.url` and `datasource.jndi-name`)
+- Missing required dependencies (e.g., SSL enabled without keystore)
+- Dangerous combinations (e.g., `ddl-auto: create-drop` with production profiles)
+- Common property typos (e.g., `server.prot` → suggests `server.port`)
+
+#### Security Scanning (`--security-scan`)
+Detects:
+- Hardcoded secrets (passwords, API keys, AWS credentials, JWT tokens)
+- Weak/default passwords
+- Insecure configurations (H2 console enabled, debug logging, SSL disabled)
+- Database credentials in connection strings
+- Values that should use environment variables
+
+#### Linting (`--lint`)
+Enforces:
+- Naming conventions (kebab-case recommended for Spring Boot)
+- Empty or null values
+- Excessive nesting depth
+- Case-insensitive duplicate properties
+- Redundant enabled/disabled flags
+
+Use `--strict-lint` to upgrade linting warnings to errors.
 
 ### Test Fixtures
 
