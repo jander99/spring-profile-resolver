@@ -4,6 +4,13 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+# Version tracking for rule updates
+SPRING_BOOT_VERSION = "3.2"  # Rules tested against this Spring Boot version
+LAST_UPDATED = "2024-12"  # Last time rules were reviewed/updated
+
+# NOTE: Linting rules are generally version-agnostic, but naming conventions
+# may change with new Spring Boot versions. Review official documentation.
+
 
 @dataclass
 class LintIssue:

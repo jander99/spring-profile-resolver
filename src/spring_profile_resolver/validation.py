@@ -5,6 +5,10 @@
 from dataclasses import dataclass
 from typing import Any
 
+# Version tracking for rule updates
+SPRING_BOOT_VERSION = "3.2"  # Rules tested against this Spring Boot version
+LAST_UPDATED = "2024-12"  # Last time rules were reviewed/updated
+
 
 @dataclass
 class ValidationIssue:
@@ -17,13 +21,17 @@ class ValidationIssue:
 
 
 # Mutually exclusive property groups
+# NOTE: When Spring Boot releases a new version, review the configuration reference
+# for new mutually exclusive properties or changed behaviors
 MUTUALLY_EXCLUSIVE_PROPERTIES = [
     {
+        # Spring Boot 1.x+ - Datasource can use URL or JNDI, not both
         "properties": ["spring.datasource.url", "spring.datasource.jndi-name"],
         "message": "Cannot specify both datasource URL and JNDI name",
         "severity": "error",
     },
     {
+        # Spring Boot 1.x+ - Database type can be auto-detected or explicit
         "properties": ["spring.jpa.database", "spring.jpa.database-platform"],
         "message": "Specifying both 'database' and 'database-platform' may cause conflicts",
         "severity": "warning",
@@ -31,8 +39,10 @@ MUTUALLY_EXCLUSIVE_PROPERTIES = [
 ]
 
 # Dangerous property combinations (properties that shouldn't be used together)
+# NOTE: Review Spring Boot security best practices when updating versions
 DANGEROUS_COMBINATIONS = [
     {
+        # Spring Boot 1.x+ - Hibernate DDL auto in production is dangerous
         "condition": lambda config: (
             _get_nested_value(config, "spring.jpa.hibernate.ddl-auto") in ["create", "create-drop"]
             and _get_nested_value(config, "spring.profiles.active") in ["prod", "production"]
@@ -42,6 +52,7 @@ DANGEROUS_COMBINATIONS = [
         "suggestion": "Use 'validate' or 'none' for production environments",
     },
     {
+        # Spring Boot 1.x+ - H2 console exposes database in production
         "condition": lambda config: (
             _get_nested_value(config, "spring.h2.console.enabled") is True
             and _get_nested_value(config, "spring.profiles.active") in ["prod", "production"]
@@ -51,6 +62,7 @@ DANGEROUS_COMBINATIONS = [
         "suggestion": "Disable H2 console in production profiles",
     },
     {
+        # Spring Boot 2.x+ - Actuator endpoints should be secured
         "condition": lambda config: (
             _get_nested_value(config, "management.endpoints.web.exposure.include") == "*"
             and not _get_nested_value(config, "management.endpoints.web.base-path")
@@ -60,6 +72,7 @@ DANGEROUS_COMBINATIONS = [
         "suggestion": "Limit exposed endpoints or set a custom base-path",
     },
     {
+        # Spring Boot 1.x+ - DevTools should never be in production
         "condition": lambda config: (
             _get_nested_value(config, "spring.devtools.remote.secret") is not None
             and _get_nested_value(config, "spring.profiles.active") in ["prod", "production"]
@@ -95,13 +108,14 @@ REQUIRED_DEPENDENCIES = [
 ]
 
 # Common property typos and suggestions
+# NOTE: When Spring Boot deprecates properties, add them here with the new property name
 COMMON_TYPOS = {
-    "server.prot": "server.port",
-    "server.context-path": "server.servlet.context-path",
-    "spring.datasource.driver-class": "spring.datasource.driver-class-name",
-    "spring.jpa.show-sql": "spring.jpa.properties.hibernate.show_sql",
-    "logging.level": "logging.level.*",
-    "management.security.enabled": "spring.security.user.name (property removed in Spring Boot 2.x)",
+    "server.prot": "server.port",  # Common typo
+    "server.context-path": "server.servlet.context-path",  # Deprecated in Spring Boot 2.0
+    "spring.datasource.driver-class": "spring.datasource.driver-class-name",  # Common typo
+    "spring.jpa.show-sql": "spring.jpa.properties.hibernate.show_sql",  # Incorrect property path
+    "logging.level": "logging.level.*",  # Requires specific logger name
+    "management.security.enabled": "spring.security.user.name (property removed in Spring Boot 2.x)",  # Removed in 2.x
 }
 
 

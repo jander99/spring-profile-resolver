@@ -6,6 +6,10 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+# Version tracking for rule updates
+SPRING_BOOT_VERSION = "3.2"  # Rules tested against this Spring Boot version
+LAST_UPDATED = "2024-12"  # Last time rules were reviewed/updated
+
 
 @dataclass
 class SecurityIssue:
@@ -75,8 +79,10 @@ SUSPICIOUS_PROPERTY_KEYWORDS = [
 ]
 
 # Insecure configuration patterns
+# NOTE: Review Spring Boot security documentation when updating versions for new security properties
 INSECURE_CONFIGURATIONS = [
     {
+        # Spring Boot 1.x+ - Weak passwords are a critical security issue
         "property": "spring.security.user.password",
         "pattern": re.compile(r"^(admin|password|123456|root|test)$", re.IGNORECASE),
         "message": "Weak or default password detected",
