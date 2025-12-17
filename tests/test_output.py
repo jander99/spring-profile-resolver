@@ -19,21 +19,25 @@ class TestGenerateComputedYaml:
         config = {"server": {"port": 8080}}
         sources = {"server.port": ConfigSource(Path("application.yml"))}
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources)
 
         assert error is None
         assert "server:" in result
         assert "port: 8080" in result
 
     def test_includes_source_comments(self) -> None:
-        """Test that source comments are included."""
-        config = {"server": {"port": 8080}}
-        sources = {"server.port": ConfigSource(Path("application.yml"))}
+        """Test that source comments are included for overrides."""
+        config = {"server": {"port": 80}}
+        sources = {"server.port": ConfigSource(Path("application-prod.yml"))}
+        base_properties = {"server", "server.port"}  # Include parent and property
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources, base_properties)
 
         assert error is None
-        assert "application.yml" in result
+        # Override should have comment
+        assert "application-prod.yml" in result
+        # No warnings for overrides
+        assert len(warnings) == 0
 
     def test_multiple_sources(self) -> None:
         """Test output with values from multiple sources."""
@@ -47,13 +51,17 @@ class TestGenerateComputedYaml:
             "server.port": ConfigSource(Path("application-prod.yml")),
             "server.host": ConfigSource(Path("application.yml")),
         }
+        base_properties = {"server", "server.port", "server.host"}  # Include parent
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources, base_properties)
 
         assert error is None
-        # Both sources should be mentioned
-        assert "application-prod.yml" in result or "prod" in result
-        assert "application.yml" in result
+        # Override from prod should have comment
+        assert "application-prod.yml" in result
+        # Base-only property should not have comment
+        assert result.count("application.yml") == 0
+        # No warnings
+        assert len(warnings) == 0
 
     def test_nested_config(self) -> None:
         """Test output with deeply nested config."""
@@ -74,7 +82,7 @@ class TestGenerateComputedYaml:
             ),
         }
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources)
 
         assert error is None
         assert "spring:" in result
@@ -87,7 +95,7 @@ class TestGenerateComputedYaml:
         config = {"endpoints": ["/health", "/info", "/metrics"]}
         sources = {"endpoints": ConfigSource(Path("application.yml"))}
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources)
 
         assert error is None
         assert "endpoints:" in result
@@ -102,7 +110,7 @@ class TestGenerateComputedYaml:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "output.yml"
-            result, error = generate_computed_yaml(config, sources, output_path=output_path)
+            result, error, warnings = generate_computed_yaml(config, sources, output_path=output_path)
 
             assert error is None
             assert output_path.exists()
@@ -115,7 +123,7 @@ class TestGenerateComputedYaml:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "nested" / "dir" / "output.yml"
-            _, error = generate_computed_yaml(config, sources, output_path=output_path)
+            _, error, warnings = generate_computed_yaml(config, sources, output_path=output_path)
 
             assert error is None
             assert output_path.exists()
@@ -125,7 +133,7 @@ class TestGenerateComputedYaml:
         config: dict = {}
         sources: dict = {}
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources)
 
         assert error is None
         # Should produce valid YAML (empty dict)
@@ -148,7 +156,7 @@ class TestGenerateComputedYaml:
             "null_value": ConfigSource(Path("app.yml")),
         }
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources)
 
         assert error is None
         assert "string: value" in result
@@ -182,7 +190,7 @@ class TestGenerateComputedYaml:
         }
         sources = {"authority-mappings": ConfigSource(Path("application.yml"))}
 
-        result, error = generate_computed_yaml(config, sources)
+        result, error, warnings = generate_computed_yaml(config, sources)
 
         # Should pass validation
         assert error is None
@@ -251,7 +259,7 @@ authority-mappings:
 
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = Path(tmpdir) / "output.yml"
-            result, error = generate_computed_yaml(config, sources, output_path=output_path)
+            result, error, warnings = generate_computed_yaml(config, sources, output_path=output_path)
 
             # Valid YAML should be written
             assert error is None

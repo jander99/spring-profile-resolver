@@ -1,0 +1,12 @@
+server:
+  port: 80
+spring:
+  application:
+    name: my-app
+  datasource:
+    url: jdbc:postgresql://prod-db:5432/mydb
+    username: prod_user
+logging:
+  level:
+    root: WARN
+    com.example: DEBUG

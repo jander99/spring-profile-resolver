@@ -14,11 +14,12 @@ uv tool uninstall spring-profile-resolver 2>/dev/null || true
 
 echo "==> Installing from local source..."
 cd "$PROJECT_ROOT"
-uv tool install --force .
+uv tool install --force --reinstall .
 
 echo "==> Verifying installation..."
-if spring-profile-resolver --help >/dev/null 2>&1; then
+if spring-profile-resolver --version >/dev/null 2>&1; then
     echo "    spring-profile-resolver is available"
+    spring-profile-resolver --version
 else
     echo "    ERROR: spring-profile-resolver not found in PATH"
     exit 1

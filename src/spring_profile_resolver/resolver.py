@@ -20,6 +20,37 @@ from .profiles import (
 MAX_IMPORT_DEPTH = 10
 
 
+def _is_base_config_file(path: Path) -> bool:
+    """Check if file is base application config (not profile-specific)."""
+    return path.stem == "application"
+
+
+def _extract_paths_from_dict(
+    data: dict, prefix: str, paths: set[str]
+) -> None:
+    """Recursively extract all dot-notation paths from nested dict."""
+    for key, value in data.items():
+        current_path = f"{prefix}.{key}" if prefix else key
+        paths.add(current_path)
+
+        if isinstance(value, dict):
+            _extract_paths_from_dict(value, current_path, paths)
+
+
+def _collect_base_property_paths(documents: list[ConfigDocument]) -> set[str]:
+    """Extract all property paths from base application config files.
+
+    Returns set of dot-notation paths like {"server.port", "spring.application.name"}
+    """
+    base_paths: set[str] = set()
+
+    for doc in documents:
+        if _is_base_config_file(doc.source_file):
+            _extract_paths_from_dict(doc.content, "", base_paths)
+
+    return base_paths
+
+
 def resolve_profiles(
     project_path: Path,
     profiles: list[str],
@@ -164,6 +195,9 @@ def resolve_profiles(
     # Merge all applicable documents
     merged_config, sources = merge_configs(sorted_docs)
 
+    # Collect base property paths for comment/warning logic
+    base_properties = _collect_base_property_paths(all_documents)
+
     # Resolve placeholders (with env var and VCAP support)
     resolved_config, placeholder_warnings = resolve_placeholders(
         merged_config,
@@ -196,6 +230,7 @@ def resolve_profiles(
     return ResolverResult(
         config=resolved_config,
         sources=sources,
+        base_properties=base_properties,
         warnings=warnings,
         errors=errors,
         validation_issues=validation_issues,
@@ -441,9 +476,10 @@ def run_resolver(
         output_path = output_dir / filename
 
     # Generate output
-    output_yaml, validation_error = generate_computed_yaml(
+    output_yaml, validation_error, new_property_warnings = generate_computed_yaml(
         config=result.config,
         sources=result.sources,
+        base_properties=result.base_properties,
         output_path=output_path,
         to_stdout=to_stdout,
     )
@@ -452,5 +488,12 @@ def run_resolver(
     errors = result.errors.copy()
     if validation_error:
         errors.append(validation_error)
+
+    # Add new property warnings from output generation
+    all_warnings = result.warnings + new_property_warnings
+
+    # Update result with combined warnings and errors
+    result.warnings = all_warnings
+    result.errors = errors
 
     return result

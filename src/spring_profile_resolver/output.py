@@ -32,22 +32,27 @@ def validate_yaml(yaml_string: str) -> tuple[bool, str | None]:
 def generate_computed_yaml(
     config: dict[str, Any],
     sources: dict[str, ConfigSource],
+    base_properties: set[str] | None = None,
     output_path: Path | None = None,
     to_stdout: bool = False,
-) -> tuple[str, str | None]:
-    """Generate the computed YAML with source comments.
+) -> tuple[str, str | None, list[str]]:
+    """Generate the computed YAML with refined comments and warnings.
 
     Args:
         config: Merged configuration dictionary
         sources: Source tracking map (path -> ConfigSource)
+        base_properties: Set of property paths from base application config
         output_path: Optional path to write output file
         to_stdout: If True, also print to stdout
 
     Returns:
-        Tuple of (yaml_string, validation_error). validation_error is None if valid.
+        Tuple of (yaml_string, validation_error, warnings). validation_error is None if valid.
     """
+    new_property_warnings: list[str] = []
+    base_props = base_properties or set()
+
     # Build a CommentedMap with source annotations
-    commented_config = _build_commented_map(config, sources)
+    commented_config = _build_commented_map(config, sources, base_props, new_property_warnings)
 
     # Generate YAML string
     yaml = YAML()
@@ -70,60 +75,118 @@ def generate_computed_yaml(
     if to_stdout:
         print(result)
 
-    return result, validation_error
+    return result, validation_error, new_property_warnings
+
+
+def _is_base_only_property(path: str, source: ConfigSource) -> bool:
+    """Check if property comes only from base application config."""
+    filename = source.file_path.name
+    return filename in ("application.yml", "application.yaml", "application.properties")
+
+
+def _should_add_comment(
+    path: str,
+    current_source: ConfigSource,
+    base_properties: set[str],
+) -> tuple[bool, bool]:
+    """Determine if comment should be added and if it's a warning.
+
+    Returns: (should_comment, is_warning)
+    """
+    # Base-only property: no comment
+    if _is_base_only_property(path, current_source):
+        return (False, False)
+
+    # New property (not in base): warning comment
+    if path not in base_properties:
+        return (True, True)
+
+    # Override: regular comment
+    return (True, False)
+
+
+def _format_comment(is_warning: bool, source: ConfigSource) -> str:
+    """Format inline comment for property."""
+    if is_warning:
+        return "WARNING: New property not in base config"
+    return source.file_path.name
+
+
+def _add_property_warning(path: str, warnings: list[str]) -> None:
+    """Add warning for new property to warnings list."""
+    warnings.append(f"Property '{path}' not found in base application config")
 
 
 def _build_commented_map(
     config: dict[str, Any],
     sources: dict[str, ConfigSource],
+    base_properties: set[str],
+    warnings: list[str],
     path_prefix: str = "",
 ) -> CommentedMap:
-    """Build a CommentedMap with source attribution comments.
+    """Build a CommentedMap with refined source attribution.
 
-    Uses inline end-of-line comments for all source attributions to maintain
-    valid YAML structure. Comments are added when a key's source differs from
-    its parent section's source.
+    Comment rules:
+    1. No comment if property only exists in base config
+    2. Comment if property exists in base AND is overridden
+    3. Warning if property is new (not in base config)
     """
     result = CommentedMap()
 
     for key, value in config.items():
         current_path = f"{path_prefix}.{key}" if path_prefix else key
 
-        # Determine the source for this key/section
-        section_source = _get_section_source(current_path, sources)
-
         if isinstance(value, dict):
-            # Recursively build nested CommentedMap
-            nested = _build_commented_map(value, sources, current_path)
+            # Recursively build nested map
+            nested = _build_commented_map(
+                value, sources, base_properties, warnings, current_path
+            )
             result[key] = nested
 
-            # Add inline comment if source differs from parent
+            # Check if comment needed for this section
             section_source = _get_section_source(current_path, sources)
-            parent_source = _get_parent_source(current_path, sources)
+            if section_source:
+                source_obj = next(
+                    (src for path, src in sources.items() if str(src) == section_source),
+                    None
+                )
+                if source_obj:
+                    should_comment, is_warning = _should_add_comment(
+                        current_path, source_obj, base_properties
+                    )
+                    if should_comment:
+                        comment = _format_comment(is_warning, source_obj)
+                        result.yaml_add_eol_comment(comment, key)
+                        if is_warning:
+                            _add_property_warning(current_path, warnings)
 
-            if section_source and (not parent_source or section_source != parent_source):
-                result.yaml_add_eol_comment(section_source, key)
         elif isinstance(value, list):
-            # Convert list items, recursively handling nested dicts
-            result[key] = _build_commented_seq(value, sources, current_path)
+            result[key] = _build_commented_seq(
+                value, sources, base_properties, warnings, current_path
+            )
 
-            # Add inline comment to list key if source differs from parent
             if current_path in sources:
-                list_source = str(sources[current_path])
-                parent_source = _get_parent_source(current_path, sources)
+                should_comment, is_warning = _should_add_comment(
+                    current_path, sources[current_path], base_properties
+                )
+                if should_comment:
+                    comment = _format_comment(is_warning, sources[current_path])
+                    result.yaml_add_eol_comment(comment, key)
+                    if is_warning:
+                        _add_property_warning(current_path, warnings)
 
-                if not parent_source or list_source != parent_source:
-                    result.yaml_add_eol_comment(list_source, key)
         else:
             result[key] = value
 
-            # Add inline comment if source differs from parent
             if current_path in sources:
-                value_source = str(sources[current_path])
-                parent_source = _get_parent_source(current_path, sources)
-
-                if not parent_source or value_source != parent_source:
-                    result.yaml_add_eol_comment(value_source, key)
+                should_comment, is_warning = _should_add_comment(
+                    current_path, sources[current_path], base_properties
+                )
+                if should_comment:
+                    comment = _format_comment(is_warning, sources[current_path])
+                    result.yaml_add_eol_comment(comment, key)
+                    if is_warning:
+                        _add_property_warning(current_path, warnings)
 
     return result
 
@@ -131,6 +194,8 @@ def _build_commented_map(
 def _build_commented_seq(
     items: list[Any],
     sources: dict[str, ConfigSource],
+    base_properties: set[str],
+    warnings: list[str],
     path_prefix: str,
 ) -> CommentedSeq:
     """Build a CommentedSeq, recursively converting nested dicts and lists.
@@ -138,6 +203,8 @@ def _build_commented_seq(
     Args:
         items: List of values
         sources: Source tracking map
+        base_properties: Set of property paths from base application config
+        warnings: List to collect warnings for new properties
         path_prefix: Path prefix for source lookups (e.g., 'authority-mappings')
 
     Returns:
@@ -150,10 +217,10 @@ def _build_commented_seq(
 
         if isinstance(item, dict):
             # Recursively convert dict to CommentedMap
-            result.append(_build_commented_map(item, sources, item_path))
+            result.append(_build_commented_map(item, sources, base_properties, warnings, item_path))
         elif isinstance(item, list):
             # Recursively convert nested list
-            result.append(_build_commented_seq(item, sources, item_path))
+            result.append(_build_commented_seq(item, sources, base_properties, warnings, item_path))
         else:
             result.append(item)
 
